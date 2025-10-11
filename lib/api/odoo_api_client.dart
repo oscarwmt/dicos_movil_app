@@ -19,7 +19,6 @@ class OdooApiClient {
 
   final String _baseUrl = "https://dicos-v1.odoo.com";
   final String _dbName = "dicos-v1";
-  // ELIMINADA la propiedad _password que generaba advertencia.
 
   int? _userId;
   String? _sessionId;
@@ -36,6 +35,72 @@ class OdooApiClient {
   String get userEmail => _userEmail;
   bool get isAuthenticated => _userId != null && _sessionId != null;
   SalesRole get userRole => _userRole;
+
+  // Obtener datos del Usuario Logeado
+  Future<Map<String, dynamic>> fetchUserDetails() async {
+    if (!isAuthenticated) {
+      throw Exception(
+          'No autenticado. No se pueden obtener los detalles del usuario.');
+    }
+
+    final url = Uri.parse('$_baseUrl/jsonrpc');
+    const String model = 'res.users';
+    const String method = 'search_read';
+
+    final payload = {
+      "jsonrpc": "2.0",
+      "method": "call",
+      "id": 4, // Usamos un ID diferente para esta llamada
+      "params": {
+        "service": "object",
+        "method": "execute_kw",
+        "args": [
+          _dbName,
+          _userId,
+          _currentPassword,
+          model,
+          method,
+          [
+            // Filtro para buscar solo el ID del usuario actual
+            [
+              ["id", "=", _userId]
+            ]
+          ],
+          {
+            // Campos que queremos obtener
+            "fields": ["name", "sale_team_id"],
+            "limit": 1
+          }
+        ],
+        "session_id": _sessionId
+      }
+    };
+
+    try {
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode(payload),
+      );
+
+      final responseBody = json.decode(response.body);
+
+      if (responseBody['error'] != null) {
+        throw Exception(
+            'Error en Odoo al obtener detalles del usuario: ${responseBody['error']['data']['message']}');
+      }
+
+      final result = responseBody['result'];
+      if (result is List && result.isNotEmpty) {
+        return result.first as Map<String, dynamic>;
+      } else {
+        throw Exception(
+            'No se encontraron datos para el usuario con ID: $_userId');
+      }
+    } catch (e) {
+      throw Exception('Error de conexión al obtener detalles del usuario: $e');
+    }
+  }
 
   // Método auxiliar para obtener la dirección principal
   Future<void> _fetchPartnerDetails() async {
@@ -242,7 +307,7 @@ class OdooApiClient {
     }
   }
 
-  // 3. Método para obtener clientes (res.partner) - ¡Método requerido!
+  // 3. Método para obtener clientes (res.partner)
   Future<List<Customer>> fetchCustomers() async {
     if (!isAuthenticated) {
       throw Exception('Acceso no autorizado.');
@@ -340,7 +405,7 @@ class OdooApiClient {
       'order_line': orderLines,
       'validity_date': DateTime.now()
           .add(const Duration(days: 7))
-          .toIso8601String()
+          .toIso8601String() // <-- CORRECCIÓN AQUÍ
           .substring(0, 10),
       'pricelist_id': 1,
     };

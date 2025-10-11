@@ -1,7 +1,6 @@
-// lib/screens/splash/splash_screen.dart
-
 import 'package:flutter/material.dart';
-import '../auth/auth_screen.dart'; // Asegúrate que la ruta sea correcta
+// CORRECCIÓN 1: Se cambió la ruta de importación a la correcta.
+import '../login/login_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -14,19 +13,20 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    _navigateToAuth();
+    _initializeApp();
   }
 
-  Future<void> _navigateToAuth() async {
-    // Simula un tiempo de carga (ej: verificar sesión, cargar datos, etc.)
+  Future<void> _initializeApp() async {
+    // Simula una carga o verificación de sesión.
     await Future.delayed(const Duration(seconds: 3));
 
-    // CORRECCIÓN: Verificar si el widget sigue montado antes de usar el context.
+    // Verificar si el widget sigue "vivo" antes de navegar.
     if (!mounted) return;
 
-    // Ahora es seguro usar el context para la navegación.
+    // Navega a la pantalla de autenticación, reemplazando el splash.
+    // CORRECCIÓN 2: Se cambió AuthScreen() por LoginScreen().
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (ctx) => const AuthScreen()),
+      MaterialPageRoute(builder: (ctx) => const LoginScreen()),
     );
   }
 
@@ -37,9 +37,10 @@ class _SplashScreenState extends State<SplashScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            // Aquí podrías poner el logo de tu empresa
             CircularProgressIndicator(),
             SizedBox(height: 20),
-            Text('Cargando...'),
+            Text('Iniciando Aplicación de Vendedores...'),
           ],
         ),
       ),
