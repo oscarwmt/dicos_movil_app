@@ -1,0 +1,33 @@
+name: dicos_movil_app
+description: Herramienta de venta en terreno para la fuerza de ventas de DICOS.
+
+# Información del Desarrollador
+publish_to: 'none' # Evita que se publique en pub.dev
+version: 1.0.0+1 # Versión de la aplicación y número de compilación (CRÍTICO)
+homepage: https://github.com/oscarwmt/dicos_movil_app 
+# author: Oscar Miranda <oscarwmt@gmail.com>
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # DEPENDENCIAS FUNCIONALES
+  http: ^1.1.0 
+  provider: ^6.1.1 
+
+  cupertino_icons: ^1.0.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^2.0.0
+  
+flutter:
+  uses-material-design: true
+
+  # Declaración de assets (para dicos.png)
+  assets:
+    - assets/images/dicos.png
