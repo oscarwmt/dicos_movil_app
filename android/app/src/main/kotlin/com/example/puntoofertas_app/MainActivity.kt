@@ -1,4 +1,4 @@
-package com.example.puntoofertas_app
+package com.example.dicos_movil_app
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -3,6 +3,8 @@
 import 'package:flutter/material.dart';
 import '../../api/odoo_api_client.dart';
 import '../../models/customer_model.dart';
+// Importamos la nueva pantalla
+import 'create_order_screen.dart';
 
 class CustomerSelectorScreen extends StatefulWidget {
   const CustomerSelectorScreen({super.key});
@@ -14,88 +16,104 @@ class CustomerSelectorScreen extends StatefulWidget {
 class _CustomerSelectorScreenState extends State<CustomerSelectorScreen> {
   final OdooApiClient _apiClient = OdooApiClient();
   late Future<List<Customer>> _customersFuture;
+  List<Customer> _filteredCustomers = [];
+  List<Customer> _allCustomers = [];
   final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _customersFuture = _apiClient.fetchCustomers();
+    _customersFuture.then((customers) {
+      setState(() {
+        _allCustomers = customers;
+        _filteredCustomers = customers;
+      });
+    });
+    _searchController.addListener(_filterCustomers);
   }
 
-  // Filtro de clientes basado en la búsqueda
-  Future<List<Customer>> _filterCustomers(String searchTerm) async {
-    final allCustomers = await _customersFuture;
-    if (searchTerm.isEmpty) return allCustomers;
+  void _filterCustomers() {
+    final query = _searchController.text.toLowerCase();
+    setState(() {
+      _filteredCustomers = _allCustomers.where((customer) {
+        return customer.name.toLowerCase().contains(query);
+      }).toList();
+    });
+  }
 
-    final lowerCaseSearch = searchTerm.toLowerCase();
-    return allCustomers.where((customer) {
-      return customer.name.toLowerCase().contains(lowerCaseSearch) ||
-          customer.email.toLowerCase().contains(lowerCaseSearch) ||
-          customer.phone.contains(searchTerm);
-    }).toList();
+  void _selectCustomer(Customer customer) {
+    // MODIFICADO: Navegamos a la nueva pantalla CreateOrderScreen
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (ctx) => CreateOrderScreen(
+          customer: customer, // Pasamos el cliente seleccionado
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Seleccionar Cliente'),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(60.0),
-          child: Padding(
-            padding: const EdgeInsets.all(8.0),
+        title: const Text('Paso 1: Seleccionar Cliente'),
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(12.0),
             child: TextField(
               controller: _searchController,
-              onChanged: (value) {
-                setState(() {
-                  // Esto fuerza la reconstrucción del FutureBuilder para aplicar el filtro
-                });
-              },
               decoration: InputDecoration(
-                hintText: 'Buscar por nombre, email o teléfono...',
+                labelText: 'Buscar cliente por nombre...',
                 prefixIcon: const Icon(Icons.search),
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                filled: true,
-                fillColor: Colors.white,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
             ),
           ),
-        ),
-      ),
-      body: FutureBuilder<List<Customer>>(
-        future: _filterCustomers(_searchController.text),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(
-                child: Text(
-                    'Error al cargar clientes: ${snapshot.error.toString()}'));
-          }
-          if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return const Center(child: Text('No se encontraron clientes.'));
-          }
-
-          final customers = snapshot.data!;
-          return ListView.builder(
-            itemCount: customers.length,
-            itemBuilder: (ctx, i) {
-              final customer = customers[i];
-              return ListTile(
-                leading: const Icon(Icons.person_pin),
-                title: Text(customer.name,
-                    style: const TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: Text('${customer.email} | ${customer.phone}'),
-                onTap: () {
-                  // Retorna el cliente seleccionado a la pantalla anterior
-                  Navigator.of(context).pop(customer);
-                },
-              );
-            },
-          );
-        },
+          Expanded(
+            child: FutureBuilder<List<Customer>>(
+              future: _customersFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return Center(child: Text('Error: ${snapshot.error}'));
+                }
+                if (_filteredCustomers.isEmpty) {
+                  return const Center(
+                      child: Text('No se encontraron clientes.'));
+                }
+                return ListView.builder(
+                  itemCount: _filteredCustomers.length,
+                  itemBuilder: (ctx, index) {
+                    final customer = _filteredCustomers[index];
+                    return Card(
+                      margin: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 4),
+                      child: ListTile(
+                        leading: const Icon(Icons.person),
+                        title: Text(customer.name),
+                        subtitle: Text(customer.email),
+                        onTap: () => _selectCustomer(customer),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

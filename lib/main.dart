@@ -1,18 +1,15 @@
-// main.dart
+// lib/main.dart
 
+import 'package:dicos_movil_app/providers/cart_provider.dart';
+import 'package:dicos_movil_app/screens/splash/splash_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import 'screens/splash/splash_screen.dart'; // Importamos el Splash Screen
-import 'providers/cart_provider.dart';
-
 void main() {
-  runApp(
-    ChangeNotifierProvider(
-      create: (context) => CartProvider(),
-      child: const DicosMovilApp(),
-    ),
-  );
+  // Asegura que los bindings de Flutter estén inicializados.
+  WidgetsFlutterBinding.ensureInitialized();
+
+  runApp(const DicosMovilApp());
 }
 
 class DicosMovilApp extends StatelessWidget {
@@ -20,15 +17,24 @@ class DicosMovilApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'DICOS Móvil',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        primarySwatch: Colors.green,
-        visualDensity: VisualDensity.adaptivePlatformDensity,
+    // Usamos MultiProvider para poder agregar más providers en el futuro fácilmente.
+    return MultiProvider(
+      providers: [
+        // Aquí inicializamos el CartProvider para que esté disponible en toda la app.
+        ChangeNotifierProvider(
+          create: (ctx) => CartProvider(),
+        ),
+      ],
+      child: MaterialApp(
+        title: 'DICOS Vendedores App',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          primarySwatch: Colors.deepPurple,
+          visualDensity: VisualDensity.adaptivePlatformDensity,
+        ),
+        // La pantalla de inicio de la aplicación es el SplashScreen.
+        home: const SplashScreen(),
       ),
-      // LANZAMOS EL SPLASH SCREEN
-      home: const SplashScreen(),
     );
   }
 }

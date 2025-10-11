@@ -1,6 +1,6 @@
 {
-    "name": "puntoofertas_app",
-    "short_name": "puntoofertas_app",
+    "name": "dicos_movil_app",
+    "short_name": "dicos_movil_app",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

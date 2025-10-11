@@ -5,47 +5,45 @@ class Product {
   final String name;
   final double price;
   final String imageUrl;
-  final String? description;
-  final String categoryName;
-  // NUEVOS: Campos de inventario
-  final double qtyAvailable; // Cantidad a mano (física)
-  final double
-      qtyForecast; // Cantidad pronosticada (a mano + pedidos de compra - pedidos de venta)
+  final String category;
+  final String description;
 
   Product({
     required this.id,
     required this.name,
     required this.price,
     required this.imageUrl,
-    this.description,
-    required this.categoryName,
-    required this.qtyAvailable,
-    required this.qtyForecast,
+    required this.category,
+    required this.description,
   });
 
-  factory Product.fromJson(Map<String, dynamic> json, String baseUrl) {
-    final int productId = json['id'] ?? 0;
+  factory Product.fromJson(Map<String, dynamic> json, String baseUrl,
+      {int? templateId}) {
+    final categoryInfo = json['categ_id'];
+    String categoryValue = 'Sin Categoría';
+    if (categoryInfo is List && categoryInfo.length > 1) {
+      categoryValue = categoryInfo[1];
+    }
 
-    final bool hasImage =
-        json['image_1920'] != null && json['image_1920'] != false;
+    final descriptionValue = json['description_sale'];
+    String descriptionText = '';
+    if (descriptionValue is String) {
+      descriptionText = descriptionValue;
+    }
 
-    final String imagePath = (productId != 0 && hasImage)
-        ? '$baseUrl/web/image?model=product.template&id=$productId&field=image_1920'
-        : '';
-
-    // Lógica de Categoría (Simple y estable)
-    const String category = 'Productos';
+    // Usamos el templateId para la imagen, si está disponible, si no, usamos el id de la variante
+    final imageId = templateId ?? json['id'];
 
     return Product(
-      id: productId,
-      name: json['name'] ?? 'Nombre no disponible',
+      id: json['id'] ?? 0,
+      name: json['name'] is String ? json['name'] : 'Sin Nombre',
       price: (json['list_price'] ?? 0.0).toDouble(),
-      imageUrl: imagePath,
-      description: null,
-      categoryName: category,
-      // Mapeo de inventario
-      qtyAvailable: (json['qty_available'] ?? 0.0).toDouble(),
-      qtyForecast: (json['virtual_available'] ?? 0.0).toDouble(),
+      // CORRECCIÓN: La URL de la imagen en variantes apunta a la plantilla (product.template)
+      imageUrl: json['image_1920'] is String
+          ? '$baseUrl/web/image/product.template/$imageId/image_1920'
+          : '',
+      category: categoryValue,
+      description: descriptionText,
     );
   }
 }

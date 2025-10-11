@@ -1,8 +1,8 @@
-// lib/screens/login/login_screen.dart
+// lib/login/login_screen.dart
 
+import 'package:dicos_movil_app/api/odoo_api_client.dart';
+import 'package:dicos_movil_app/screens/dashboard_screen.dart';
 import 'package:flutter/material.dart';
-import '../../api/odoo_api_client.dart';
-import '../home/home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -12,62 +12,59 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final TextEditingController _usernameController =
-      TextEditingController(text: "oscarwmt@gmail.com");
-  final TextEditingController _passwordController =
-      TextEditingController(text: "Ticex2021");
+  final _formKey = GlobalKey<FormState>();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
   bool _isLoading = false;
-  String? _errorMessage;
-
   final OdooApiClient _apiClient = OdooApiClient();
 
-  // Lógica de inicio de sesión contra la API de Odoo
   Future<void> _login() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
+    // Ocultar el teclado si está abierto
+    FocusScope.of(context).unfocus();
 
-    final login = _usernameController.text;
-    final password = _passwordController.text;
+    if (_formKey.currentState!.validate()) {
+      setState(() {
+        _isLoading = true;
+      });
 
-    try {
-      // CORRECCIÓN CLAVE: Pasamos los argumentos requeridos: login y password
-      await _apiClient.authenticate(login: login, password: password);
+      try {
+        // 1. Autenticar al usuario
+        await _apiClient.authenticate(
+          login: _emailController.text,
+          password: _passwordController.text,
+        );
 
-      if (mounted) {
+        // 2. Si la autenticación es exitosa, buscar los datos del usuario
+        final userData = await _apiClient.fetchUserDetails();
+
+        if (!mounted) return;
+
+        // 3. Navegar a la nueva pantalla Dashboard y pasarle los datos
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
-              builder: (ctx) => HomeScreen(apiClient: _apiClient)),
+              builder: (ctx) => DashboardScreen(userData: userData)),
         );
+      } catch (e) {
+        // Asegurarnos de detener el indicador de carga en caso de error
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content:
+                  Text('Error: ${e.toString().replaceAll("Exception: ", "")}'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
       }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _errorMessage =
-              "Error de conexión/credenciales. Detalles: ${e.toString().replaceAll('Exception: ', '')}";
-          _isLoading = false;
-        });
-      }
-    }
-  }
-
-  // Lógica para ingresar como invitado (pasa una instancia NO autenticada)
-  void _loginAsGuest() {
-    final guestClient = OdooApiClient();
-
-    if (mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (ctx) => HomeScreen(apiClient: guestClient),
-        ),
-      );
     }
   }
 
   @override
   void dispose() {
-    _usernameController.dispose();
+    _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
@@ -75,111 +72,71 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('Inicio de Sesión Vendedor'),
+        centerTitle: true,
+      ),
       body: Center(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(32.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              SizedBox(
-                width: 120,
-                height: 120,
-                child: Image.asset('assets/images/dicos.png'),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Acceso al Catálogo',
-                style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 30),
-
-              // Campo de Usuario (Email)
-              TextField(
-                controller: _usernameController,
-                decoration: InputDecoration(
-                  labelText: 'Correo Electrónico (Odoo)',
-                  prefixIcon: const Icon(Icons.email),
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10)),
+          padding: const EdgeInsets.all(24.0),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Image.asset(
+                  // CORRECCIÓN: Usamos el nombre de archivo correcto "dicos.png"
+                  'assets/images/dicos.png',
+                  height: 120, // Puedes ajustar la altura
                 ),
-                keyboardType: TextInputType.emailAddress,
-              ),
-              const SizedBox(height: 16),
-
-              // Campo de Contraseña
-              TextField(
-                controller: _passwordController,
-                decoration: InputDecoration(
-                  labelText: 'Contraseña (Odoo)',
-                  prefixIcon: const Icon(Icons.lock),
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10)),
-                ),
-                obscureText: true,
-              ),
-              const SizedBox(height: 24),
-
-              // Mensaje de Error
-              if (_errorMessage != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 16.0),
-                  child: Text(
-                    _errorMessage!,
-                    style: const TextStyle(
-                        color: Colors.red, fontWeight: FontWeight.bold),
-                    textAlign: TextAlign.center,
+                const SizedBox(height: 40),
+                TextFormField(
+                  controller: _emailController,
+                  decoration: const InputDecoration(
+                    labelText: 'Usuario (Email)',
+                    prefixIcon: Icon(Icons.person_outline),
+                    border: OutlineInputBorder(),
                   ),
-                ),
-
-              // Botón INICIAR SESIÓN
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _login,
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 15),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10)),
-                  ),
-                  child: _isLoading
-                      ? const SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(
-                              color: Colors.white, strokeWidth: 3))
-                      : const Text('INICIAR SESIÓN',
-                          style: TextStyle(fontSize: 18)),
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              // Botón INGRESAR COMO INVITADO
-              SizedBox(
-                width: double.infinity,
-                child: TextButton(
-                  onPressed: _isLoading ? null : _loginAsGuest,
-                  child: const Text('INGRESAR COMO INVITADO',
-                      style: TextStyle(fontSize: 16, color: Colors.grey)),
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              // Botón CREAR UNA CUENTA (Simulado)
-              SizedBox(
-                width: double.infinity,
-                child: TextButton(
-                  onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                          content: Text(
-                              'Funcionalidad de Crear Cuenta no implementada aún.')),
-                    );
+                  keyboardType: TextInputType.emailAddress,
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Por favor, ingrese su usuario';
+                    }
+                    return null;
                   },
-                  child: const Text('CREAR UNA CUENTA',
-                      style: TextStyle(fontSize: 16, color: Colors.blue)),
                 ),
-              ),
-            ],
+                const SizedBox(height: 20),
+                TextFormField(
+                  controller: _passwordController,
+                  decoration: const InputDecoration(
+                    labelText: 'Contraseña',
+                    prefixIcon: Icon(Icons.lock_outline),
+                    border: OutlineInputBorder(),
+                  ),
+                  obscureText: true,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Por favor, ingrese su contraseña';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 30),
+                _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : ElevatedButton(
+                        onPressed: _login,
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: const Text('INGRESAR',
+                            style: TextStyle(fontSize: 16)),
+                      ),
+              ],
+            ),
           ),
         ),
       ),

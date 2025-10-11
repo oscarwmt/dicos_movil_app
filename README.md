@@ -1,4 +1,4 @@
-# puntoofertas_app
+# DicosMovil APP
 
 A new Flutter project.
 

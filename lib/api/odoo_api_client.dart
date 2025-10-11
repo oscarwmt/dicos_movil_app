@@ -7,19 +7,15 @@ import '../models/product_model.dart';
 import '../models/cart_item_model.dart';
 import '../models/customer_model.dart';
 
-// Enum para manejar los perfiles de Odoo internamente
 enum SalesRole { vendedor, verTodasLasVentas, administradorVentas, invitado }
 
 class OdooApiClient {
-  // --- SINGLETON PATTERN ---
   static final OdooApiClient _instance = OdooApiClient._internal();
   factory OdooApiClient() => _instance;
   OdooApiClient._internal();
-  // -------------------------
 
   final String _baseUrl = "https://dicos-v1.odoo.com";
   final String _dbName = "dicos-v1";
-
   int? _userId;
   String? _sessionId;
   String _currentPassword = "";
@@ -27,7 +23,6 @@ class OdooApiClient {
   final String _userEmail = "";
   String _deliveryAddress = "Av. Principal #123, Santiago";
   int? _partnerId;
-
   SalesRole _userRole = SalesRole.invitado;
 
   String get userName => _userName;
@@ -36,21 +31,18 @@ class OdooApiClient {
   bool get isAuthenticated => _userId != null && _sessionId != null;
   SalesRole get userRole => _userRole;
 
-  // Obtener datos del Usuario Logeado
   Future<Map<String, dynamic>> fetchUserDetails() async {
     if (!isAuthenticated) {
       throw Exception(
           'No autenticado. No se pueden obtener los detalles del usuario.');
     }
-
     final url = Uri.parse('$_baseUrl/jsonrpc');
     const String model = 'res.users';
     const String method = 'search_read';
-
     final payload = {
       "jsonrpc": "2.0",
       "method": "call",
-      "id": 4, // Usamos un ID diferente para esta llamada
+      "id": 4,
       "params": {
         "service": "object",
         "method": "execute_kw",
@@ -61,13 +53,11 @@ class OdooApiClient {
           model,
           method,
           [
-            // Filtro para buscar solo el ID del usuario actual
             [
               ["id", "=", _userId]
             ]
           ],
           {
-            // Campos que queremos obtener
             "fields": ["name", "sale_team_id"],
             "limit": 1
           }
@@ -75,21 +65,17 @@ class OdooApiClient {
         "session_id": _sessionId
       }
     };
-
     try {
       final response = await http.post(
         url,
         headers: {'Content-Type': 'application/json'},
         body: json.encode(payload),
       );
-
       final responseBody = json.decode(response.body);
-
       if (responseBody['error'] != null) {
         throw Exception(
             'Error en Odoo al obtener detalles del usuario: ${responseBody['error']['data']['message']}');
       }
-
       final result = responseBody['result'];
       if (result is List && result.isNotEmpty) {
         return result.first as Map<String, dynamic>;
@@ -102,12 +88,9 @@ class OdooApiClient {
     }
   }
 
-  // Método auxiliar para obtener la dirección principal
   Future<void> _fetchPartnerDetails() async {
     if (_partnerId == null || _userId == null) return;
-
     final url = Uri.parse('$_baseUrl/jsonrpc');
-
     final payload = {
       "jsonrpc": "2.0",
       "method": "call",
@@ -131,22 +114,18 @@ class OdooApiClient {
         "session_id": _sessionId
       }
     };
-
     try {
       final response = await http.post(
         url,
         headers: {'Content-Type': 'application/json'},
         body: json.encode(payload),
       );
-
       final responseBody = json.decode(response.body);
       final result = responseBody['result'];
-
       if (result is List && result.isNotEmpty) {
         final partnerData = result.first;
         final street = partnerData['street'] ?? '';
         final city = partnerData['city'] ?? '';
-
         String address = street.trim();
         if (city.isNotEmpty) {
           if (address.isNotEmpty) {
@@ -154,48 +133,34 @@ class OdooApiClient {
           }
           address += city;
         }
-
         if (address.isNotEmpty) {
           _deliveryAddress = address;
         }
       }
-    } catch (e) {
-      // Si falla, se mantiene la dirección por defecto.
-    }
+    } catch (e) {}
   }
 
-  // 1. Método para manejar la autenticación
   Future<void> authenticate(
       {required String login, required String password}) async {
     final url = Uri.parse('$_baseUrl/web/session/authenticate');
-
     final payload = {
       "jsonrpc": "2.0",
       "method": "call",
-      "params": {
-        "db": _dbName,
-        "login": login,
-        "password": password // Usa el password recibido
-      }
+      "params": {"db": _dbName, "login": login, "password": password}
     };
-
     try {
       final response = await http.post(
         url,
         headers: {'Content-Type': 'application/json'},
         body: json.encode(payload),
       );
-
       final responseBody = json.decode(response.body);
-
       if (responseBody['error'] != null) {
         final errorMessageDetail = responseBody['error']['data']['message'] ??
             'Error desconocido al autenticar.';
         throw Exception('Autenticación Fallida: $errorMessageDetail');
       }
-
       final result = responseBody['result'];
-
       final String? setCookie = response.headers['set-cookie'];
       String? extractedSessionId;
       if (setCookie != null) {
@@ -204,18 +169,14 @@ class OdooApiClient {
           extractedSessionId = match.group(1);
         }
       }
-
       final int? receivedUid = result?['uid'] as int?;
-
       if (receivedUid != null && extractedSessionId != null) {
         _userId = receivedUid;
         _sessionId = extractedSessionId;
         _partnerId = result?['partner_id'] as int?;
-        _currentPassword = password; // Guardamos la contraseña para execute_kw
-
+        _currentPassword = password;
         _userName = result?['name'] ?? "Usuario";
         _userRole = SalesRole.vendedor;
-
         await _fetchPartnerDetails();
       } else {
         throw Exception(
@@ -229,18 +190,32 @@ class OdooApiClient {
     }
   }
 
-  // 2. Método para obtener productos (Estable)
-  Future<List<Product>> fetchProducts() async {
+  // --- INICIO DE LA MODIFICACIÓN ---
+  Future<List<Product>> fetchProducts({int limit = 80, int offset = 0}) async {
     if (!isAuthenticated) {
-      if (_userName == "Invitado") {
-        return Future.value([]);
-      }
-      throw Exception('No autenticado. Llama a authenticate() primero.');
+      throw Exception('No autenticado.');
     }
 
     final url = Uri.parse('$_baseUrl/jsonrpc');
-    const String model = 'product.template';
+    // CORRECCIÓN: Apuntamos a 'product.product' que es la variante vendible.
+    const String model = 'product.product';
     const String method = 'search_read';
+
+    final Map<String, dynamic> kwargs = {
+      'domain': [
+        ["sale_ok", "=", true]
+      ], // Usamos 'sale_ok' para productos vendibles
+      'fields': [
+        "id",
+        "name",
+        "list_price",
+        "image_1920",
+        "categ_id",
+        "description_sale"
+      ],
+      'limit': limit,
+      'offset': offset,
+    };
 
     final payload = {
       "jsonrpc": "2.0",
@@ -249,23 +224,7 @@ class OdooApiClient {
       "params": {
         "service": "object",
         "method": "execute_kw",
-        "args": [
-          _dbName,
-          _userId,
-          _currentPassword,
-          model,
-          method,
-          [
-            // Filtro activo = true
-            [
-              ["active", "=", true]
-            ]
-          ],
-          {
-            "fields": ["id", "name", "list_price", "image_1920"],
-            "limit": 50
-          }
-        ],
+        "args": [_dbName, _userId, _currentPassword, model, method, [], kwargs],
         "session_id": _sessionId
       }
     };
@@ -277,46 +236,89 @@ class OdooApiClient {
             headers: {'Content-Type': 'application/json'},
             body: json.encode(payload),
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       final responseBody = json.decode(response.body);
-
       if (responseBody['error'] != null) {
         throw Exception(
             'Error en la API de Odoo: ${responseBody['error']['data']['message']}');
       }
 
       final result = responseBody['result'];
-
-      if (result is bool && result == false) {
-        return [];
+      if (result is List) {
+        // En 'product.product', la imagen se relaciona a través del 'product_tmpl_id'
+        // pero la llamada a la API debería resolverlo. Lo dejamos como está por ahora.
+        return result.map((json) {
+          // Pequeño ajuste para la URL de la imagen en variantes
+          final templateId = json['product_tmpl_id'] is List
+              ? json['product_tmpl_id'][0]
+              : json['id'];
+          return Product.fromJson(json, _baseUrl, templateId: templateId);
+        }).toList();
       }
-
-      final List<dynamic> productJsonList = result as List<dynamic>;
-
-      return productJsonList
-          .map((json) => Product.fromJson(json, _baseUrl))
-          .toList();
+      return [];
     } catch (e) {
-      if (e is TimeoutException) {
-        throw Exception(
-            'Tiempo de espera agotado. La conexión es inestable o la respuesta es muy grande.');
+      throw Exception('Error de conexión en la consulta de productos: $e');
+    }
+  }
+  // --- FIN DE LA MODIFICACIÓN ---
+
+  Future<List<Map<String, dynamic>>> fetchCategories() async {
+    if (!isAuthenticated) {
+      throw Exception('No autenticado.');
+    }
+    final url = Uri.parse('$_baseUrl/jsonrpc');
+    const String model = 'product.category';
+    const String method = 'search_read';
+    final Map<String, dynamic> kwargs = {
+      'fields': ['id', 'name']
+    };
+    final payload = {
+      "jsonrpc": "2.0",
+      "method": "call",
+      "id": 7,
+      "params": {
+        "service": "object",
+        "method": "execute_kw",
+        "args": [_dbName, _userId, _currentPassword, model, method, [], kwargs],
+        "session_id": _sessionId
       }
-      throw Exception(
-          'Error de conexión o datos en la consulta de productos: $e');
+    };
+    try {
+      final response = await http.post(url,
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode(payload));
+      final responseBody = json.decode(response.body);
+      if (responseBody['error'] != null) {
+        throw Exception(
+            'Error al cargar categorías: ${responseBody['error']['data']['message']}');
+      }
+      final result = responseBody['result'];
+      if (result is List) {
+        return List<Map<String, dynamic>>.from(result);
+      }
+      return [];
+    } catch (e) {
+      throw Exception('Error de conexión al cargar categorías: $e');
     }
   }
 
-  // 3. Método para obtener clientes (res.partner)
   Future<List<Customer>> fetchCustomers() async {
     if (!isAuthenticated) {
       throw Exception('Acceso no autorizado.');
     }
-
     final url = Uri.parse('$_baseUrl/jsonrpc');
     const String model = 'res.partner';
     const String method = 'search_read';
-
+    final Map<String, dynamic> kwargs = {
+      'domain': [
+        ['customer_rank', '>', 0],
+        ['user_id', '=', _userId],
+      ],
+      'fields': ["id", "name", "email", "phone", "property_payment_term_id"],
+      'limit': 200,
+      'order': "name asc",
+    };
     final payload = {
       "jsonrpc": "2.0",
       "method": "call",
@@ -330,25 +332,12 @@ class OdooApiClient {
           _currentPassword,
           model,
           method,
-          [
-            [
-              [
-                "customer_rank",
-                ">",
-                0
-              ] // Filtro: Solo contactos marcados como clientes
-            ]
-          ],
-          {
-            "fields": ["id", "name", "email", "phone"],
-            "limit": 100,
-            "order": "name asc",
-          }
+          [],
+          kwargs,
         ],
         "session_id": _sessionId
       }
     };
-
     try {
       final response = await http
           .post(
@@ -356,37 +345,81 @@ class OdooApiClient {
             headers: {'Content-Type': 'application/json'},
             body: json.encode(payload),
           )
-          .timeout(const Duration(seconds: 15));
-
+          .timeout(const Duration(seconds: 20));
       final responseBody = json.decode(response.body);
       if (responseBody['error'] != null) {
         throw Exception(
             'Error al cargar clientes: ${responseBody['error']['data']['message']}');
       }
       final result = responseBody['result'];
-      if (result is bool && result == false) return [];
-
-      final List<dynamic> customerJsonList = result as List<dynamic>;
-      return customerJsonList.map((json) => Customer.fromJson(json)).toList();
+      if (result is List) {
+        final List<dynamic> customerJsonList = result;
+        return customerJsonList.map((json) => Customer.fromJson(json)).toList();
+      } else {
+        return [];
+      }
     } catch (e) {
       throw Exception('Error de conexión al cargar clientes: $e');
     }
   }
 
-  // 4. Método FINAL: Crear Pedido de Venta (sale.order)
+  Future<List<Map<String, dynamic>>> fetchCustomerAddresses(
+      int partnerId) async {
+    if (!isAuthenticated) {
+      throw Exception('Acceso no autorizado.');
+    }
+    final url = Uri.parse('$_baseUrl/jsonrpc');
+    const String model = 'res.partner';
+    const String method = 'search_read';
+    final Map<String, dynamic> kwargs = {
+      'domain': [
+        ['parent_id', '=', partnerId],
+        ['type', '=', 'delivery'],
+      ],
+      'fields': ['id', 'name', 'street', 'city'],
+    };
+    final payload = {
+      "jsonrpc": "2.0",
+      "method": "call",
+      "id": 6,
+      "params": {
+        "service": "object",
+        "method": "execute_kw",
+        "args": [_dbName, _userId, _currentPassword, model, method, [], kwargs],
+        "session_id": _sessionId
+      }
+    };
+    try {
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode(payload),
+      );
+      final responseBody = json.decode(response.body);
+      if (responseBody['error'] != null) {
+        throw Exception(
+            'Error al cargar direcciones: ${responseBody['error']['data']['message']}');
+      }
+      final result = responseBody['result'];
+      if (result is List) {
+        return List<Map<String, dynamic>>.from(result);
+      } else {
+        return [];
+      }
+    } catch (e) {
+      throw Exception('Error de conexión al cargar direcciones: $e');
+    }
+  }
+
   Future<int> createSaleOrder(List<CartItem> cartItems,
       {int? customerPartnerId}) async {
-    if (_partnerId == null) {
+    if (customerPartnerId == null) {
       throw Exception(
-          'Error de Pedido: No se pudo obtener el Partner ID del vendedor.');
+          'Error de Pedido: No se ha seleccionado un cliente o dirección de entrega.');
     }
-
     final url = Uri.parse('$_baseUrl/jsonrpc');
     const String model = 'sale.order';
     const String method = 'create';
-
-    final clientPartnerId = customerPartnerId ?? _partnerId;
-
     final List<List<dynamic>> orderLines = cartItems.map((item) {
       return [
         0,
@@ -398,18 +431,16 @@ class OdooApiClient {
         }
       ];
     }).toList();
-
     final Map<String, dynamic> orderValues = {
-      'partner_id': clientPartnerId,
+      'partner_id': customerPartnerId,
       'user_id': _userId,
       'order_line': orderLines,
       'validity_date': DateTime.now()
           .add(const Duration(days: 7))
-          .toIso8601String() // <-- CORRECCIÓN AQUÍ
+          .toIso8601String()
           .substring(0, 10),
       'pricelist_id': 1,
     };
-
     final payload = {
       "jsonrpc": "2.0",
       "method": "call",
@@ -428,7 +459,6 @@ class OdooApiClient {
         "session_id": _sessionId
       }
     };
-
     try {
       final response = await http
           .post(
@@ -437,14 +467,11 @@ class OdooApiClient {
             body: json.encode(payload),
           )
           .timeout(const Duration(seconds: 20));
-
       final responseBody = json.decode(response.body);
-
       if (responseBody['error'] != null) {
         throw Exception(
             'Error en Odoo al crear pedido: ${responseBody['error']['data']['message']}');
       }
-
       final int orderId = responseBody['result'] as int;
       return orderId;
     } catch (e) {
