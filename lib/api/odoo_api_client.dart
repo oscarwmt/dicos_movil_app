@@ -33,8 +33,7 @@ class OdooApiClient {
 
   Future<Map<String, dynamic>> fetchUserDetails() async {
     if (!isAuthenticated) {
-      throw Exception(
-          'No autenticado. No se pueden obtener los detalles del usuario.');
+      throw Exception('No autenticado.');
     }
     final url = Uri.parse('$_baseUrl/jsonrpc');
     const String model = 'res.users';
@@ -74,17 +73,16 @@ class OdooApiClient {
       final responseBody = json.decode(response.body);
       if (responseBody['error'] != null) {
         throw Exception(
-            'Error en Odoo al obtener detalles del usuario: ${responseBody['error']['data']['message']}');
+            'Error en Odoo: ${responseBody['error']['data']['message']}');
       }
       final result = responseBody['result'];
       if (result is List && result.isNotEmpty) {
         return result.first as Map<String, dynamic>;
       } else {
-        throw Exception(
-            'No se encontraron datos para el usuario con ID: $_userId');
+        throw Exception('No se encontraron datos para el usuario: $_userId');
       }
     } catch (e) {
-      throw Exception('Error de conexión al obtener detalles del usuario: $e');
+      throw Exception('Error de conexión: $e');
     }
   }
 
@@ -137,7 +135,9 @@ class OdooApiClient {
           _deliveryAddress = address;
         }
       }
-    } catch (e) {}
+    } catch (e) {
+      // Intencionalmente vacío para no detener la app si este detalle falla.
+    }
   }
 
   Future<void> authenticate(
@@ -156,8 +156,8 @@ class OdooApiClient {
       );
       final responseBody = json.decode(response.body);
       if (responseBody['error'] != null) {
-        final errorMessageDetail = responseBody['error']['data']['message'] ??
-            'Error desconocido al autenticar.';
+        final errorMessageDetail =
+            responseBody['error']['data']['message'] ?? 'Error desconocido.';
         throw Exception('Autenticación Fallida: $errorMessageDetail');
       }
       final result = responseBody['result'];
@@ -179,44 +179,44 @@ class OdooApiClient {
         _userRole = SalesRole.vendedor;
         await _fetchPartnerDetails();
       } else {
-        throw Exception(
-            'Respuesta de autenticación incompleta o inválida (Falta UID o Session ID en las cookies).');
+        throw Exception('Respuesta de autenticación incompleta.');
       }
     } catch (e) {
       _userId = null;
       _sessionId = null;
-      throw Exception(
-          'Fallo de conexión o autenticación. Verifique las credenciales.');
+      throw Exception('Fallo de conexión o autenticación.');
     }
   }
 
-  // --- INICIO DE LA MODIFICACIÓN ---
-  Future<List<Product>> fetchProducts({int limit = 80, int offset = 0}) async {
+  Future<List<Product>> fetchProducts({
+    int limit = 40,
+    int offset = 0,
+    List<dynamic> domain = const [],
+  }) async {
     if (!isAuthenticated) {
       throw Exception('No autenticado.');
     }
-
     final url = Uri.parse('$_baseUrl/jsonrpc');
-    // CORRECCIÓN: Apuntamos a 'product.product' que es la variante vendible.
     const String model = 'product.product';
     const String method = 'search_read';
-
+    final finalDomain = [
+      ['sale_ok', '=', true],
+      ...domain
+    ];
     final Map<String, dynamic> kwargs = {
-      'domain': [
-        ["sale_ok", "=", true]
-      ], // Usamos 'sale_ok' para productos vendibles
+      'domain': finalDomain,
       'fields': [
         "id",
         "name",
         "list_price",
-        "image_1920",
         "categ_id",
-        "description_sale"
+        "description_sale",
+        "product_tmpl_id",
+        "default_code"
       ],
       'limit': limit,
       'offset': offset,
     };
-
     final payload = {
       "jsonrpc": "2.0",
       "method": "call",
@@ -228,32 +228,24 @@ class OdooApiClient {
         "session_id": _sessionId
       }
     };
-
     try {
       final response = await http
-          .post(
-            url,
-            headers: {'Content-Type': 'application/json'},
-            body: json.encode(payload),
-          )
+          .post(url,
+              headers: {'Content-Type': 'application/json'},
+              body: json.encode(payload))
           .timeout(const Duration(seconds: 30));
-
       final responseBody = json.decode(response.body);
       if (responseBody['error'] != null) {
         throw Exception(
             'Error en la API de Odoo: ${responseBody['error']['data']['message']}');
       }
-
       final result = responseBody['result'];
       if (result is List) {
-        // En 'product.product', la imagen se relaciona a través del 'product_tmpl_id'
-        // pero la llamada a la API debería resolverlo. Lo dejamos como está por ahora.
         return result.map((json) {
-          // Pequeño ajuste para la URL de la imagen en variantes
           final templateId = json['product_tmpl_id'] is List
               ? json['product_tmpl_id'][0]
               : json['id'];
-          return Product.fromJson(json, _baseUrl, templateId: templateId);
+          return Product.fromJson(json, templateId: templateId);
         }).toList();
       }
       return [];
@@ -261,7 +253,6 @@ class OdooApiClient {
       throw Exception('Error de conexión en la consulta de productos: $e');
     }
   }
-  // --- FIN DE LA MODIFICACIÓN ---
 
   Future<List<Map<String, dynamic>>> fetchCategories() async {
     if (!isAuthenticated) {
@@ -271,7 +262,11 @@ class OdooApiClient {
     const String model = 'product.category';
     const String method = 'search_read';
     final Map<String, dynamic> kwargs = {
-      'fields': ['id', 'name']
+      'domain': [
+        ['parent_id', '=', false]
+      ],
+      'fields': ['id', 'name'],
+      'order': 'name asc',
     };
     final payload = {
       "jsonrpc": "2.0",
@@ -476,8 +471,7 @@ class OdooApiClient {
       return orderId;
     } catch (e) {
       if (e is TimeoutException) {
-        throw Exception(
-            'Tiempo de espera agotado al crear el pedido. La conexión es lenta.');
+        throw Exception('Tiempo de espera agotado al crear el pedido.');
       }
       throw Exception('Error de conexión al crear pedido: $e');
     }

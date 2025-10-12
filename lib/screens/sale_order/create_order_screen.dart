@@ -1,5 +1,6 @@
 // lib/screens/sale_order/create_order_screen.dart
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../api/odoo_api_client.dart';
@@ -11,7 +12,6 @@ import 'new_order_screen.dart';
 
 class CreateOrderScreen extends StatefulWidget {
   final Customer customer;
-
   const CreateOrderScreen({super.key, required this.customer});
 
   @override
@@ -21,117 +21,109 @@ class CreateOrderScreen extends StatefulWidget {
 class _CreateOrderScreenState extends State<CreateOrderScreen> {
   final OdooApiClient _apiClient = OdooApiClient();
   final ScrollController _scrollController = ScrollController();
+  final TextEditingController _searchController = TextEditingController();
+  Timer? _debounce;
 
-  // Se inicializan aquí para que existan desde el principio
   late Future<List<Map<String, dynamic>>> _addressesFuture;
   late Future<List<Map<String, dynamic>>> _categoriesFuture;
-
-  List<Product> _allProducts = [];
-  List<Product> _filteredProducts = [];
+  List<Product> _products = [];
   List<Map<String, dynamic>>? _categories;
 
   bool _isLoading = true;
   bool _isLoadingMore = false;
   int? _selectedAddressId;
   int? _selectedCategoryId;
-  final TextEditingController _searchController = TextEditingController();
 
-  // --- INICIO DE LA CORRECCIÓN ---
   @override
   void initState() {
     super.initState();
-
-    // 1. Asignamos los Futures de forma síncrona e inmediata.
-    // Esto garantiza que no habrá un LateInitializationError.
     _addressesFuture = _apiClient.fetchCustomerAddresses(widget.customer.id);
     _categoriesFuture = _apiClient.fetchCategories();
+    _fetchAndSetProducts();
 
-    // 2. Cargamos la lista de productos de forma asíncrona.
-    _loadInitialProducts();
-
-    // 3. Añadimos los listeners.
     _scrollController.addListener(_onScroll);
-    _searchController.addListener(_filterProducts);
+    _searchController.addListener(_onSearchChanged);
   }
 
-  Future<void> _loadInitialProducts() async {
-    // No es necesario llamar a setState aquí porque _isLoading ya es true por defecto
+  Future<void> _fetchAndSetProducts({bool loadMore = false}) async {
+    if (loadMore && _isLoadingMore) {
+      return;
+    }
+
+    if (loadMore) {
+      setState(() {
+        _isLoadingMore = true;
+      });
+    } else {
+      setState(() {
+        _isLoading = true;
+      });
+    }
+
     try {
-      final products = await _apiClient.fetchProducts(limit: 40);
+      final domain = _buildDomain();
+      final newProducts = await _apiClient.fetchProducts(
+        offset: loadMore ? _products.length : 0,
+        domain: domain,
+      );
+
       if (mounted) {
         setState(() {
-          _allProducts = products;
-          _filteredProducts = products;
-          _isLoading = false;
+          if (loadMore) {
+            _products.addAll(newProducts);
+          } else {
+            _products = newProducts;
+          }
         });
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error al cargar productos: $e')));
+            SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
       }
-    }
-  }
-  // --- FIN DE LA CORRECCIÓN ---
-
-  Future<void> _loadMoreProducts() async {
-    if (_isLoadingMore) return;
-    setState(() {
-      _isLoadingMore = true;
-    });
-
-    try {
-      final newProducts = await _apiClient.fetchProducts(
-          offset: _allProducts.length, limit: 40);
+    } finally {
       if (mounted) {
         setState(() {
-          _allProducts.addAll(newProducts);
-          _filterProducts(); // Re-aplicar filtros
+          _isLoading = false;
           _isLoadingMore = false;
         });
       }
-    } catch (e) {
-      if (mounted) setState(() => _isLoadingMore = false);
     }
+  }
+
+  List<dynamic> _buildDomain() {
+    final domain = [];
+    final query = _searchController.text;
+    if (query.isNotEmpty) {
+      domain.add(['name', 'ilike', query]);
+    }
+    if (_selectedCategoryId != null) {
+      domain.add(['categ_id', 'child_of', _selectedCategoryId]);
+    }
+    return domain;
   }
 
   void _onScroll() {
     if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 200) {
-      _loadMoreProducts();
+        _scrollController.position.maxScrollExtent - 300) {
+      _fetchAndSetProducts(loadMore: true);
     }
   }
 
-  void _filterProducts() {
-    final query = _searchController.text.toLowerCase();
-    setState(() {
-      _filteredProducts = _allProducts.where((product) {
-        final categoryName = _selectedCategoryId != null
-            ? _getCategoryName(_selectedCategoryId!)
-            : null;
-        final matchesCategory =
-            categoryName == null || product.category == categoryName;
-        final matchesSearch =
-            query.isEmpty || product.name.toLowerCase().contains(query);
-        return matchesCategory && matchesSearch;
-      }).toList();
+  void _onSearchChanged() {
+    if (_debounce?.isActive ?? false) {
+      _debounce!.cancel();
+    }
+    _debounce = Timer(const Duration(milliseconds: 500), () {
+      _fetchAndSetProducts();
     });
-  }
-
-  String? _getCategoryName(int id) {
-    if (_categories == null) {
-      return null;
-    }
-    final category =
-        _categories!.firstWhere((cat) => cat['id'] == id, orElse: () => {});
-    return category.isNotEmpty ? category['name'] : null;
   }
 
   @override
   void dispose() {
     _searchController.dispose();
     _scrollController.dispose();
+    _debounce?.cancel();
     super.dispose();
   }
 
@@ -148,10 +140,8 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                 IconButton(
                   icon: const Icon(Icons.shopping_cart),
                   onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                          builder: (ctx) => const NewOrderScreen()),
-                    );
+                    Navigator.of(context).push(MaterialPageRoute(
+                        builder: (ctx) => const NewOrderScreen()));
                   },
                 ),
                 if (cart.items.isNotEmpty)
@@ -187,9 +177,10 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     );
   }
 
+  // --- INICIO DE LA MODIFICACIÓN ---
   Widget _buildOrderHeader() {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       color: Colors.grey[100],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -209,7 +200,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                   child: const Text('Cambiar')),
             ],
           ),
-          const Divider(),
+          const Divider(height: 16),
           FutureBuilder<List<Map<String, dynamic>>>(
             future: _addressesFuture,
             builder: (context, snapshot) {
@@ -242,19 +233,34 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
               );
             },
           ),
-          const SizedBox(height: 10),
-          ListTile(
-            leading: Icon(Icons.payment, color: Colors.grey.shade700),
-            title: const Text('Plazo de Pago'),
-            subtitle: Text(widget.customer.paymentTerm,
-                style:
-                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            contentPadding: EdgeInsets.zero,
+          const SizedBox(height: 12),
+          // Se reemplaza ListTile por un Row más compacto
+          Row(
+            children: [
+              Icon(Icons.payment, color: Colors.grey.shade700, size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                'Plazo de Pago: ',
+                style: TextStyle(fontSize: 14, color: Colors.black54),
+              ),
+              Expanded(
+                child: Text(
+                  widget.customer.paymentTerm,
+                  style: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.bold),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
           ),
+          const SizedBox(height: 8),
+          const Text('Info de créditos pendientes (Próximamente)',
+              style: TextStyle(color: Colors.grey, fontSize: 12)),
         ],
       ),
     );
   }
+  // --- FIN DE LA MODIFICACIÓN ---
 
   Widget _buildProductCatalog() {
     return Expanded(
@@ -282,7 +288,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                     builder: (context, snapshot) {
                       if (!snapshot.hasData) {
                         return const SizedBox(height: 58);
-                      } // Placeholder para mantener altura
+                      }
                       _categories = snapshot.data!;
                       return DropdownButtonFormField<int>(
                         initialValue: _selectedCategoryId,
@@ -302,10 +308,8 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                           }),
                         ],
                         onChanged: (value) {
-                          setState(() {
-                            _selectedCategoryId = value;
-                            _filterProducts();
-                          });
+                          _selectedCategoryId = value;
+                          _fetchAndSetProducts();
                         },
                       );
                     },
@@ -317,23 +321,29 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
-                : _filteredProducts.isEmpty
+                : _products.isEmpty
                     ? const Center(
                         child: Text(
                             'No se encontraron productos con el filtro actual.'))
-                    : ListView.builder(
+                    : GridView.builder(
                         controller: _scrollController,
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          childAspectRatio: 2 / 3,
+                          crossAxisSpacing: 10,
+                          mainAxisSpacing: 10,
+                        ),
                         padding: const EdgeInsets.all(10.0),
-                        itemCount:
-                            _filteredProducts.length + (_isLoadingMore ? 1 : 0),
+                        itemCount: _products.length + (_isLoadingMore ? 1 : 0),
                         itemBuilder: (ctx, i) {
-                          if (i == _filteredProducts.length) {
+                          if (i == _products.length) {
                             return const Center(
                                 child: Padding(
                                     padding: EdgeInsets.all(16.0),
                                     child: CircularProgressIndicator()));
                           }
-                          return ProductCard(product: _filteredProducts[i]);
+                          return ProductCard(product: _products[i]);
                         },
                       ),
           ),

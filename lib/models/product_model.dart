@@ -3,6 +3,7 @@
 class Product {
   final int id;
   final String name;
+  final String internalReference; // AÑADIDO
   final double price;
   final String imageUrl;
   final String category;
@@ -11,14 +12,14 @@ class Product {
   Product({
     required this.id,
     required this.name,
+    required this.internalReference, // AÑADIDO
     required this.price,
     required this.imageUrl,
     required this.category,
     required this.description,
   });
 
-  factory Product.fromJson(Map<String, dynamic> json, String baseUrl,
-      {int? templateId}) {
+  factory Product.fromJson(Map<String, dynamic> json, {int? templateId}) {
     final categoryInfo = json['categ_id'];
     String categoryValue = 'Sin Categoría';
     if (categoryInfo is List && categoryInfo.length > 1) {
@@ -31,17 +32,17 @@ class Product {
       descriptionText = descriptionValue;
     }
 
-    // Usamos el templateId para la imagen, si está disponible, si no, usamos el id de la variante
     final imageId = templateId ?? json['id'];
 
     return Product(
       id: json['id'] ?? 0,
       name: json['name'] is String ? json['name'] : 'Sin Nombre',
+      // AÑADIDO: Lectura segura de la referencia interna
+      internalReference:
+          json['default_code'] is String ? json['default_code'] : '',
       price: (json['list_price'] ?? 0.0).toDouble(),
-      // CORRECCIÓN: La URL de la imagen en variantes apunta a la plantilla (product.template)
-      imageUrl: json['image_1920'] is String
-          ? '$baseUrl/web/image/product.template/$imageId/image_1920'
-          : '',
+      imageUrl:
+          'https://www.dicos.cl/web/image/product.template/$imageId/image_512',
       category: categoryValue,
       description: descriptionText,
     );
