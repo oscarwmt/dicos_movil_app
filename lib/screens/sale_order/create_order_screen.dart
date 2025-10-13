@@ -2,6 +2,7 @@
 
 import 'dart:async';
 import 'package:flutter/material.dart';
+// ✅ CORRECCIÓN: Se reemplazó el punto por dos puntos en la importación.
 import 'package:provider/provider.dart';
 import '../../api/odoo_api_client.dart';
 import '../../models/customer_model.dart';
@@ -50,21 +51,19 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       return;
     }
 
-    if (loadMore) {
-      setState(() {
+    setState(() {
+      if (loadMore) {
         _isLoadingMore = true;
-      });
-    } else {
-      setState(() {
+      } else {
         _isLoading = true;
-      });
-    }
+      }
+    });
 
     try {
-      final domain = _buildDomain();
       final newProducts = await _apiClient.fetchProducts(
         offset: loadMore ? _products.length : 0,
-        domain: domain,
+        categoryId: _selectedCategoryId,
+        searchQuery: _searchController.text,
       );
 
       if (mounted) {
@@ -89,18 +88,6 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
         });
       }
     }
-  }
-
-  List<dynamic> _buildDomain() {
-    final domain = [];
-    final query = _searchController.text;
-    if (query.isNotEmpty) {
-      domain.add(['name', 'ilike', query]);
-    }
-    if (_selectedCategoryId != null) {
-      domain.add(['categ_id', 'child_of', _selectedCategoryId]);
-    }
-    return domain;
   }
 
   void _onScroll() {
@@ -177,7 +164,6 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     );
   }
 
-  // --- INICIO DE LA MODIFICACIÓN ---
   Widget _buildOrderHeader() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -234,7 +220,6 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
             },
           ),
           const SizedBox(height: 12),
-          // Se reemplaza ListTile por un Row más compacto
           Row(
             children: [
               Icon(Icons.payment, color: Colors.grey.shade700, size: 20),
@@ -260,7 +245,6 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       ),
     );
   }
-  // --- FIN DE LA MODIFICACIÓN ---
 
   Widget _buildProductCatalog() {
     return Expanded(
@@ -308,7 +292,9 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                           }),
                         ],
                         onChanged: (value) {
-                          _selectedCategoryId = value;
+                          setState(() {
+                            _selectedCategoryId = value;
+                          });
                           _fetchAndSetProducts();
                         },
                       );

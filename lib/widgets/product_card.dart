@@ -10,14 +10,11 @@ import '../screens/product_detail/product_detail_screen.dart';
 class ProductCard extends StatelessWidget {
   final Product product;
 
-  // ✅ CORRECCIÓN 1: Constructor con required this.product
   const ProductCard({super.key, required this.product});
 
   @override
   Widget build(BuildContext context) {
     final cart = Provider.of<CartProvider>(context, listen: false);
-
-    // ✅ CORRECCIÓN 2: Definición de priceFormatter
     final priceFormatter = NumberFormat('#,##0', 'es_CL');
 
     return Card(
@@ -35,15 +32,17 @@ class ProductCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Sección de la Imagen: Mantenemos Expanded
+            // ✅ AJUSTADO: Se reduce el flex para hacer la imagen un poco más pequeña.
             Expanded(
-              flex: 2, // Ajustado a 2 para equilibrar el espacio
+              flex:
+                  5, // Antes era 2, ajusta este valor si necesitas más o menos espacio
               child: Container(
                 color: Colors.grey[200],
+                padding: const EdgeInsets.all(4.0),
                 child: product.imageUrl.isNotEmpty
                     ? Image.network(
                         product.imageUrl,
-                        fit: BoxFit.contain, // Ajuste para que se vea completa
+                        fit: BoxFit.contain,
                         errorBuilder: (context, error, stackTrace) =>
                             const Icon(Icons.broken_image, color: Colors.grey),
                       )
@@ -51,66 +50,68 @@ class ProductCard extends StatelessWidget {
               ),
             ),
 
-            // Sección de la Información del Producto
-            // ❌ AJUSTE DE DISEÑO: ELIMINAMOS Expanded para que ocupe el mínimo espacio
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize:
-                    MainAxisSize.min, // Ocupa solo el espacio de sus hijos
-                children: [
-                  Text(
-                    product.name,
-                    style: const TextStyle(fontSize: 12),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+            // ✅ AJUSTADO: Se aumenta el flex para dar más espacio a los detalles.
+            Expanded(
+              flex: 4, // Antes era flexible, ahora tiene una proporción fija
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(8.0, 8.0, 8.0, 4.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      product.name,
+                      style: const TextStyle(fontSize: 12),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Precio del producto
+                        RichText(
+                          text: TextSpan(
+                            style: TextStyle(
+                                fontSize: 14,
+                                color: Theme.of(context).primaryColor,
+                                fontWeight: FontWeight.w600),
+                            children: [
+                              TextSpan(
+                                  text:
+                                      '\$${priceFormatter.format(product.price)}'),
+                              TextSpan(
+                                text: ' + IVA',
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.grey.shade700,
+                                    fontWeight: FontWeight.normal),
+                              ),
+                            ],
+                          ),
+                        ),
 
-                  const SizedBox(
-                      height: 4), // Espacio mínimo entre nombre y detalles
+                        const SizedBox(
+                            height: 4), // Espacio entre precio y stock
 
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      if (product.internalReference.isNotEmpty)
+                        // ✅ AÑADIDO: Nueva línea para la cantidad a mano
                         Text(
-                          product.internalReference,
-                          style:
-                              const TextStyle(fontSize: 11, color: Colors.grey),
+                          'Cantidad a Mano: ${product.qtyAvailable.toStringAsFixed(0)}',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.black54,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      const Spacer(), // Spacer para separar la referencia del precio
-                      RichText(
-                        text: TextSpan(
-                          style: TextStyle(
-                              fontSize: 14,
-                              color: Theme.of(context).primaryColor,
-                              fontWeight: FontWeight.w600),
-                          children: [
-                            TextSpan(
-                                text:
-                                    '\$${priceFormatter.format(product.price)}'),
-                            TextSpan(
-                              text: ' + IVA',
-                              style: TextStyle(
-                                  fontSize: 10,
-                                  color: Colors.grey.shade700,
-                                  fontWeight: FontWeight.normal),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
 
-            // Sección del Botón
             Padding(
-              padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
               child: ElevatedButton(
-                // ✅ CORRECCIÓN 3: Restaurar la función onPressed
                 onPressed: () {
                   cart.addItem(product, quantity: 1);
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -120,6 +121,10 @@ class ProductCard extends StatelessWidget {
                     ),
                   );
                 },
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
                 child: const Text('Agregar'),
               ),
             ),

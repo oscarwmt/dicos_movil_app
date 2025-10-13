@@ -3,8 +3,8 @@
 import 'package:flutter/material.dart';
 import '../../api/odoo_api_client.dart';
 import '../../models/customer_model.dart';
-// Importamos la nueva pantalla
-import 'create_order_screen.dart';
+// ✅ CAMBIO 1: Importamos la nueva y correcta pantalla HomeScreen
+import '../home/home_screen.dart';
 
 class CustomerSelectorScreen extends StatefulWidget {
   const CustomerSelectorScreen({super.key});
@@ -42,11 +42,12 @@ class _CustomerSelectorScreenState extends State<CustomerSelectorScreen> {
     });
   }
 
+  // ✅ CAMBIO 2: La función ahora navega a HomeScreen y le pasa los parámetros necesarios.
   void _selectCustomer(Customer customer) {
-    // MODIFICADO: Navegamos a la nueva pantalla CreateOrderScreen
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (ctx) => CreateOrderScreen(
+        builder: (ctx) => HomeScreen(
+          apiClient: _apiClient, // Pasamos la instancia de la API
           customer: customer, // Pasamos el cliente seleccionado
         ),
       ),

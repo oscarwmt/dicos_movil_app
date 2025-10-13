@@ -136,7 +136,7 @@ class OdooApiClient {
         }
       }
     } catch (e) {
-      // Intencionalmente vacío para no detener la app si este detalle falla.
+      // Intencionalmente vacío
     }
   }
 
@@ -191,7 +191,8 @@ class OdooApiClient {
   Future<List<Product>> fetchProducts({
     int limit = 40,
     int offset = 0,
-    List<dynamic> domain = const [],
+    int? categoryId,
+    String? searchQuery,
   }) async {
     if (!isAuthenticated) {
       throw Exception('No autenticado.');
@@ -199,12 +200,19 @@ class OdooApiClient {
     final url = Uri.parse('$_baseUrl/jsonrpc');
     const String model = 'product.product';
     const String method = 'search_read';
-    final finalDomain = [
-      ['sale_ok', '=', true],
-      ...domain
+
+    final List<dynamic> domain = [
+      ['sale_ok', '=', true]
     ];
+    if (categoryId != null) {
+      domain.add(['categ_id', 'child_of', categoryId]);
+    }
+    if (searchQuery != null && searchQuery.isNotEmpty) {
+      domain.add(['name', 'ilike', searchQuery]);
+    }
+
     final Map<String, dynamic> kwargs = {
-      'domain': finalDomain,
+      'domain': domain,
       'fields': [
         "id",
         "name",
@@ -212,7 +220,8 @@ class OdooApiClient {
         "categ_id",
         "description_sale",
         "product_tmpl_id",
-        "default_code"
+        "default_code",
+        "qty_available"
       ],
       'limit': limit,
       'offset': offset,
@@ -294,7 +303,51 @@ class OdooApiClient {
       }
       return [];
     } catch (e) {
-      throw Exception('Error de conexión al cargar categorías: $e');
+      rethrow;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchSubCategories(int parentId) async {
+    if (!isAuthenticated) {
+      throw Exception('No autenticado.');
+    }
+    final url = Uri.parse('$_baseUrl/jsonrpc');
+    const String model = 'product.category';
+    const String method = 'search_read';
+    final Map<String, dynamic> kwargs = {
+      'domain': [
+        ['parent_id', '=', parentId]
+      ],
+      'fields': ['id', 'name'],
+      'order': 'name asc',
+    };
+    final payload = {
+      "jsonrpc": "2.0",
+      "method": "call",
+      "id": 8,
+      "params": {
+        "service": "object",
+        "method": "execute_kw",
+        "args": [_dbName, _userId, _currentPassword, model, method, [], kwargs],
+        "session_id": _sessionId
+      }
+    };
+    try {
+      final response = await http.post(url,
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode(payload));
+      final responseBody = json.decode(response.body);
+      if (responseBody['error'] != null) {
+        throw Exception(
+            'Error al cargar subcategorías: ${responseBody['error']['data']['message']}');
+      }
+      final result = responseBody['result'];
+      if (result is List) {
+        return List<Map<String, dynamic>>.from(result);
+      }
+      return [];
+    } catch (e) {
+      throw Exception('Error de conexión al cargar subcategorías: $e');
     }
   }
 
@@ -310,7 +363,15 @@ class OdooApiClient {
         ['customer_rank', '>', 0],
         ['user_id', '=', _userId],
       ],
-      'fields': ["id", "name", "email", "phone", "property_payment_term_id"],
+      // ✅ CAMBIO: Pedimos tu campo personalizado 'x_studio_bloqueado_deuda'.
+      'fields': [
+        "id",
+        "name",
+        "email",
+        "phone",
+        "property_payment_term_id",
+        "x_studio_bloqueado_deuda"
+      ],
       'limit': 200,
       'order': "name asc",
     };
@@ -474,6 +535,60 @@ class OdooApiClient {
         throw Exception('Tiempo de espera agotado al crear el pedido.');
       }
       throw Exception('Error de conexión al crear pedido: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>> fetchPartnerFinancials(int partnerId) async {
+    if (!isAuthenticated) {
+      throw Exception('No autenticado.');
+    }
+    final url = Uri.parse('$_baseUrl/jsonrpc');
+    const String model = 'res.partner';
+    const String method = 'read';
+
+    final payload = {
+      "jsonrpc": "2.0",
+      "method": "call",
+      "id": 9,
+      "params": {
+        "service": "object",
+        "method": "execute_kw",
+        "args": [
+          _dbName,
+          _userId,
+          _currentPassword,
+          model,
+          method,
+          [
+            [partnerId]
+          ],
+          {
+            "fields": ["credit", "debit"],
+          }
+        ],
+        "session_id": _sessionId
+      }
+    };
+
+    try {
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode(payload),
+      );
+      final responseBody = json.decode(response.body);
+      if (responseBody['error'] != null) {
+        throw Exception(
+            'Error al cargar datos financieros: ${responseBody['error']['data']['message']}');
+      }
+      final result = responseBody['result'];
+      if (result is List && result.isNotEmpty) {
+        return result.first as Map<String, dynamic>;
+      } else {
+        throw Exception('No se encontraron datos financieros para el cliente.');
+      }
+    } catch (e) {
+      throw Exception('Error de conexión al cargar datos financieros: $e');
     }
   }
 }

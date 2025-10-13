@@ -4,15 +4,15 @@ class Customer {
   final int id;
   final String name;
   final String email;
-  final String phone;
   final String paymentTerm;
+  final bool isBlocked;
 
   Customer({
     required this.id,
     required this.name,
     required this.email,
-    required this.phone,
     required this.paymentTerm,
+    required this.isBlocked,
   });
 
   static Customer get defaultCustomer {
@@ -20,24 +20,25 @@ class Customer {
       id: 0,
       name: 'Seleccionar Cliente',
       email: '',
-      phone: '',
-      paymentTerm: 'No definido',
+      paymentTerm: '',
+      isBlocked: true,
     );
   }
 
   factory Customer.fromJson(Map<String, dynamic> json) {
     final paymentTermInfo = json['property_payment_term_id'];
-    String paymentTermValue = 'No definido';
+    String paymentTermValue = 'Contado';
     if (paymentTermInfo is List && paymentTermInfo.length > 1) {
       paymentTermValue = paymentTermInfo[1];
     }
 
     return Customer(
       id: json['id'] ?? 0,
-      name: json['name'] is String ? json['name'] : 'Sin Nombre',
-      email: json['email'] is String ? json['email'] : 'Sin email',
-      phone: json['phone'] is String ? json['phone'] : 'Sin teléfono',
+      name: json['name'] ?? 'Sin Nombre',
+      email: json['email'] ?? 'Sin correo',
       paymentTerm: paymentTermValue,
+      // ✅ CORRECCIÓN: Usamos una comparación estricta para máxima seguridad.
+      isBlocked: json['x_studio_bloqueado_deuda'] == true,
     );
   }
 }
