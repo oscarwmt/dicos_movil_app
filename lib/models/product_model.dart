@@ -13,6 +13,8 @@ class Product {
   final int unitsPerPackage;
 
   // Propiedad calculada para la imagen
+  // Nota: La URL sigue usando el ID de la plantilla (templateId) para obtener la imagen,
+  // ya que la imagen se asocia a la plantilla, no a la variante.
   String get imageUrl =>
       'https://pruebas-aplicacion.odoo.com/web/image?model=product.template&id=$id&field=image_1920';
 
@@ -25,8 +27,8 @@ class Product {
     this.categoryId,
     this.category,
     this.description,
-    this.salesUnit,
     required this.unitsPerPackage,
+    this.salesUnit,
   });
 
   factory Product.fromJson(Map<String, dynamic> json, {int? templateId}) {
@@ -65,8 +67,25 @@ class Product {
     final rawInternalRef = json['default_code'];
     final safeInternalRef = rawInternalRef?.toString() ?? '';
 
+    // --- LÓGICA DE CORRECCIÓN CLAVE: Usar product_variant_id (product.product) ---
+    final rawVariantId = json['product_variant_id'];
+    int finalProductId;
+
+    if (rawVariantId is List && rawVariantId.isNotEmpty) {
+      // Caso más común: Odoo devuelve [ID_Variante, Nombre_Variante]
+      finalProductId = rawVariantId[0] as int;
+    } else if (rawVariantId is int) {
+      // Caso alternativo: Si Odoo devuelve solo el ID (menos común)
+      finalProductId = rawVariantId;
+    } else {
+      // Fallback: Si no se encontró la variante, usar el ID de la plantilla.
+      // Advertencia: Si el templateId es 11270, el error persistirá si Odoo requiere variante.
+      finalProductId = templateId ?? json['id'] as int;
+    }
+
     return Product(
-      id: templateId ?? json['id'] as int,
+      // ✅ USAMOS EL ID DE LA VARIANTE (O EL FALLBACK) PARA EL CARRITO/PEDIDO
+      id: finalProductId,
       name: json['name'] as String,
       price: parseDouble(json['list_price']),
       stock: parseDouble(json['qty_available']),

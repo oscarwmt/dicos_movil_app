@@ -121,6 +121,7 @@ class NewOrderScreen extends StatelessWidget {
   // ✅ Método auxiliar para construir el panel de precio/cantidad (Columna Derecha)
   Widget _buildPriceAndQuantityControls(
       BuildContext context, CartItem item, NumberFormat formatter) {
+    // ✅ CORRECCIÓN CLAVE: La variable itemTotalNeto se calcula aquí
     final double itemTotalNeto = item.product.price * item.quantity;
     final CartProvider cart = Provider.of<CartProvider>(context, listen: false);
 
@@ -273,7 +274,7 @@ class NewOrderScreen extends StatelessWidget {
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                   child: Container(
                     decoration: BoxDecoration(
-                      // ✅ BORDE CONDICIONAL: Rojo si no hay stock, Gris si hay stock
+                      // BORDE CONDICIONAL: Rojo si no hay stock, Gris si hay stock
                       border: Border.all(
                         color: hasStock ? Colors.grey.shade300 : Colors.red,
                         width: 1.5,
@@ -300,7 +301,7 @@ class NewOrderScreen extends StatelessWidget {
                               ),
                               const SizedBox(height: 4),
 
-                              // ✅ UNIDAD DE VENTA (Visible solo si hay stock)
+                              // UNIDAD DE VENTA (Visible solo si hay stock)
                               if (hasStock)
                                 Text(
                                   '(${item.product.unitsPerPackage} por ${safeSalesUnit})',
@@ -308,7 +309,7 @@ class NewOrderScreen extends StatelessWidget {
                                       fontSize: 12, color: Colors.grey),
                                 ),
 
-                              // ✅ MENSAJE SIN STOCK (Si no hay stock)
+                              // MENSAJE SIN STOCK (Si no hay stock)
                               if (!hasStock)
                                 const Text(
                                   '(Producto sin stock/cotización)',

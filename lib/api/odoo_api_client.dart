@@ -3,6 +3,7 @@
 import 'dart:convert';
 import 'dart:async';
 import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart';
 import '../models/product_model.dart';
 import '../models/cart_item_model.dart';
 import '../models/customer_model.dart';
@@ -271,7 +272,8 @@ class OdooApiClient {
         "default_code",
         "qty_available",
         "x_studio_unidad_de_venta_nombre",
-        "x_studio_unidades_por_paquete"
+        "x_studio_unidades_por_paquete",
+        "product_variant_id"
       ],
       'limit': limit,
       'offset': offset,
@@ -307,6 +309,7 @@ class OdooApiClient {
       if (result is List) {
         return result.map((json) {
           final templateId = json['id'];
+          // Asume que Product.fromJson usa product_variant_id para item.product.id
           return Product.fromJson(json, templateId: templateId);
         }).toList();
       }
@@ -459,24 +462,44 @@ class OdooApiClient {
     if (customerPartnerId == 0) {
       throw Exception('Error: No se ha seleccionado un cliente válido.');
     }
-    // ✅ CORRECCIÓN: Se eliminó la validación estricta de que shippingAddressId sea diferente de 0.
-    // El ID del cliente principal (partner_id) es un ID válido para el envío.
 
     final url = Uri.parse('$_baseUrl/jsonrpc');
     const String model = 'sale.order';
     const String method = 'create';
 
-    final List<List<dynamic>> orderLines = cartItems.map((item) {
-      return [
-        0,
-        0,
-        {
-          'product_id': item.product.id,
-          'product_uom_qty': item.quantity,
-          // Odoo calcula el precio (price_unit)
-        }
-      ];
-    }).toList();
+    final List<List<dynamic>> orderLines = cartItems
+        .map((item) {
+          // ⚠️ Validación: Si el producto tiene stock 0, no se envía la línea,
+          // ya que solo está para demanda.
+          if (item.product.stock <= 0) {
+            return [0, 0, {}]; // Devuelve una línea vacía que se filtrará
+          }
+
+          return [
+            0,
+            0,
+            {
+              'product_id':
+                  item.product.id, // Debe ser el ID de product.product
+              'product_uom_qty': item.quantity,
+              // Odoo calcula el precio (price_unit)
+            }
+          ];
+        })
+        // Filtramos las líneas vacías para que Odoo no intente procesarlas
+        .where((line) =>
+            line.length > 2 && line[2] is Map && (line[2] as Map).isNotEmpty)
+        .toList();
+
+    if (orderLines.isEmpty && cartItems.isNotEmpty) {
+      // Si el carrito no está vacío pero todas las líneas son productos sin stock,
+      // lanzamos error si NO es cotización.
+      if (!isQuotation) {
+        throw Exception(
+            'No se puede crear un Pedido Confirmado sin productos con stock.');
+      }
+      // Si es cotización, permitimos la creación de un pedido sin líneas de producto para registrar el encabezado.
+    }
 
     final Map<String, dynamic> orderValues = {
       'partner_id': customerPartnerId,
@@ -581,23 +604,29 @@ class OdooApiClient {
   Future<void> reportOutOfStockDemand(
       List<CartItem> items, int partnerId) async {
     if (!isAuthenticated || items.isEmpty) return;
-    String description =
-        'El cliente solicitó los siguientes productos sin stock:\n';
-    for (var item in items) {
-      description +=
-          '- ${item.product.name} (Ref: ${item.product.internalReference}) - Cantidad solicitada: ${item.quantity}\n';
-    }
-    final url = Uri.parse('$_baseUrl/jsonrpc');
-    const String model = 'mail.activity';
+
+    // ✅ MODELO PERSONALIZADO PARA ESTADÍSTICAS
+    const String model = 'x_demanda_de_producto_';
     const String method = 'create';
-    final Map<String, dynamic> values = {
-      'activity_type_id': 4,
-      'summary': 'Demanda de Productos sin Stock',
-      'note': description,
-      'res_model_id': await _getModelId('res.partner'),
-      'res_id': partnerId,
-      'user_id': _userId,
-    };
+    final url = Uri.parse('$_baseUrl/jsonrpc');
+
+    // Creamos un array de valores (una lista de registros) para insertar en el nuevo modelo
+    final List<Map<String, dynamic>> recordsToCreate = [];
+
+    for (var item in items) {
+      final int productId = item.product.id;
+
+      // ✅ CORRECCIÓN CLAVE: Agregamos el campo 'x_name' (Descripción)
+      recordsToCreate.add({
+        'x_name':
+            'Demanda: ${item.product.name} (Vendedor: $_userName)', // Campo requerido
+        'x_studio_cliente': partnerId,
+        'x_studio_producto_1': productId,
+        'x_studio_cantidad_solicitada': item.quantity,
+        'x_studio_vendedor': _userId,
+      });
+    }
+
     final payload = {
       "jsonrpc": "2.0",
       "method": "call",
@@ -611,7 +640,7 @@ class OdooApiClient {
           _currentPassword,
           model,
           method,
-          [values]
+          [recordsToCreate] // Enviamos la lista de registros
         ],
         "session_id": _sessionId
       }
@@ -622,56 +651,16 @@ class OdooApiClient {
           body: json.encode(payload));
       final responseBody = json.decode(response.body);
       if (responseBody['error'] != null) {
-        // No se lanza excepción
+        debugPrint(
+            'Error al crear registro de demanda en Odoo. El modelo $model debe existir: ${responseBody['error']['data']['message']}');
+      } else {
+        debugPrint(
+            'Demanda de productos registrada en el modelo $model para análisis.');
       }
     } catch (e) {
-      // No se lanza excepción
+      debugPrint('Fallo de conexión al registrar demanda: $e');
     }
   }
 
-  Future<int?> _getModelId(String modelName) async {
-    final url = Uri.parse('$_baseUrl/jsonrpc');
-    const String model = 'ir.model';
-    const String method = 'search_read';
-    final payload = {
-      "jsonrpc": "2.0",
-      "method": "call",
-      "id": 11,
-      "params": {
-        "service": "object",
-        "method": "execute_kw",
-        "args": [
-          _dbName,
-          _userId,
-          _currentPassword,
-          model,
-          method,
-          [
-            [
-              ['model', '=', modelName]
-            ]
-          ],
-          {
-            'fields': ['id'],
-            'limit': 1
-          }
-        ],
-        "session_id": _sessionId
-      }
-    };
-    try {
-      final response = await http.post(url,
-          headers: {'Content-Type': 'application/json'},
-          body: json.encode(payload));
-      final responseBody = json.decode(response.body);
-      if (responseBody['error'] != null) return null;
-      final result = responseBody['result'];
-      if (result is List && result.isNotEmpty) {
-        return result.first['id'] as int;
-      }
-      return null;
-    } catch (e) {
-      return null;
-    }
-  }
+  // El método _getModelId se elimina, ya no es necesario
 }
