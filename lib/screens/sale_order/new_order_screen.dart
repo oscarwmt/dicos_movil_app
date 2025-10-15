@@ -12,12 +12,16 @@ class NewOrderScreen extends StatelessWidget {
   final bool isQuotation;
   final Customer customer;
   final int shippingAddressId;
+  final String shippingAddressName;
+  final String shippingAddressStreet;
 
   const NewOrderScreen({
     super.key,
     required this.isQuotation,
     required this.customer,
     required this.shippingAddressId,
+    required this.shippingAddressName,
+    required this.shippingAddressStreet,
   });
 
   Future<void> _handleSaveOrder(BuildContext context, CartProvider cart) async {
@@ -81,12 +85,130 @@ class NewOrderScreen extends StatelessWidget {
     }
   }
 
+  // Método para manejar la reducción de cantidad y confirmación de eliminación
+  Future<void> _handleQuantityDecrement(
+      BuildContext context, CartProvider cart, CartItem item) async {
+    if (item.quantity > 1) {
+      // Si la cantidad es > 1, solo la reducimos
+      cart.removeSingleItem(item.product.id);
+    } else {
+      // Si la cantidad es 1, pedimos confirmación para eliminar
+      final shouldDelete = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('¿Eliminar producto?'),
+          content: Text('¿Quieres eliminar "${item.product.name}" del pedido?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child:
+                  const Text('Eliminar', style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        ),
+      );
+
+      if (shouldDelete == true) {
+        cart.removeItem(item.product.id);
+      }
+    }
+  }
+
+  // ✅ Método auxiliar para construir el panel de precio/cantidad (Columna Derecha)
+  Widget _buildPriceAndQuantityControls(
+      BuildContext context, CartItem item, NumberFormat formatter) {
+    final double itemTotalNeto = item.product.price * item.quantity;
+    final CartProvider cart = Provider.of<CartProvider>(context, listen: false);
+
+    final bool hasStock = item.product.stock > 0;
+
+    return SizedBox(
+      width: 125, // Aseguramos un ancho fijo para este panel
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // 1. Panel de Precio (Visible solo si hay stock)
+          if (hasStock)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  formatter.format(itemTotalNeto),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: Colors.green),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+                // Impuestos
+                const Text('+ IMPUESTOS',
+                    style: TextStyle(
+                        fontSize: 8, color: Colors.black54, height: 1.0)),
+              ],
+            ),
+
+          // Separador (solo si hay precio arriba)
+          SizedBox(height: hasStock ? 5 : 0),
+
+          // 2. Objeto de Cantidad (Visible siempre)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              // Botón de decrementar/eliminar
+              IconButton(
+                icon: Icon(
+                  item.quantity > 1
+                      ? Icons.remove_circle_outline
+                      : Icons.delete_outline,
+                  color: item.quantity > 1 ? Colors.orange : Colors.red,
+                  size: 20,
+                ),
+                onPressed: () => _handleQuantityDecrement(context, cart, item),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+              // Cantidad
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                child: Text(
+                  '${item.quantity}',
+                  style: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.bold),
+                ),
+              ),
+              // Botón de incrementar
+              IconButton(
+                icon: const Icon(Icons.add_circle_outline,
+                    color: Colors.green, size: 20),
+                onPressed: () => cart.addItem(item.product),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Escucha al carrito para redibujar al cambiar cantidades
     final cart = Provider.of<CartProvider>(context);
-    final totalAmount = cart.totalAmount;
-    final priceFormatter =
-        NumberFormat.currency(locale: 'es_CL', symbol: '\$', decimalDigits: 0);
+    final totalNetoEstimado = cart.totalAmount;
+    final totalImpuestosEstimado = totalNetoEstimado * 0.19;
+    final totalFinalEstimado = totalNetoEstimado + totalImpuestosEstimado;
+
+    // Formateador con símbolo '$' al inicio
+    final NumberFormat currencyFormatter = NumberFormat.currency(
+        locale: 'es', symbol: '\$', decimalDigits: 0, customPattern: '\$#,##0');
+
     final buttonText = isQuotation ? 'Crear Cotización' : 'Confirmar Pedido';
 
     return Scaffold(
@@ -95,6 +217,7 @@ class NewOrderScreen extends StatelessWidget {
       ),
       body: Column(
         children: [
+          // Sección de Encabezado (Cliente y Dirección)
           Container(
             padding: const EdgeInsets.all(16),
             width: double.infinity,
@@ -106,33 +229,110 @@ class NewOrderScreen extends StatelessWidget {
                   'Cliente:',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
-                // ✅ CORRECCIÓN DE ADVERTENCIA: Usamos el valor directamente
                 Text(
                   customer.name,
                   style: const TextStyle(fontSize: 16),
                 ),
+                const SizedBox(height: 8),
+
+                // Dirección de entrega
+                const Text(
+                  'Dirección de Entrega:',
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black54),
+                ),
                 Text(
-                  'Dirección ID: $shippingAddressId',
-                  style: const TextStyle(fontSize: 14, color: Colors.grey),
+                  shippingAddressName,
+                  style: const TextStyle(fontSize: 13, color: Colors.black54),
+                ),
+                Text(
+                  shippingAddressStreet.isNotEmpty
+                      ? shippingAddressStreet
+                      : 'Sin calle especificada.',
+                  style: const TextStyle(fontSize: 13, color: Colors.black54),
                 ),
               ],
             ),
           ),
+
+          // Listado de Productos
           Expanded(
             child: ListView.builder(
               itemCount: cart.items.length,
               itemBuilder: (ctx, i) {
                 final CartItem item = cart.items[i];
-                return ListTile(
-                  title: Text(item.product.name),
-                  subtitle: Text(
-                      '${priceFormatter.format(item.product.price)} x ${item.quantity}'),
-                  trailing: Text(priceFormatter
-                      .format(item.product.price * item.quantity)),
+                final String safeSalesUnit = item.product.salesUnit ?? 'Unidad';
+
+                // Determinar si hay stock
+                final bool hasStock = item.product.stock > 0;
+
+                return Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      // ✅ BORDE CONDICIONAL: Rojo si no hay stock, Gris si hay stock
+                      border: Border.all(
+                        color: hasStock ? Colors.grey.shade300 : Colors.red,
+                        width: 1.5,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    padding: const EdgeInsets.only(
+                        left: 12, right: 8, top: 10, bottom: 10),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Columna 1: Nombre y Unidad de Venta (Flexible)
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Título del Producto (Siempre visible)
+                              Text(
+                                item.product.name,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold, fontSize: 15),
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 4),
+
+                              // ✅ UNIDAD DE VENTA (Visible solo si hay stock)
+                              if (hasStock)
+                                Text(
+                                  '(${item.product.unitsPerPackage} por ${safeSalesUnit})',
+                                  style: const TextStyle(
+                                      fontSize: 12, color: Colors.grey),
+                                ),
+
+                              // ✅ MENSAJE SIN STOCK (Si no hay stock)
+                              if (!hasStock)
+                                const Text(
+                                  '(Producto sin stock/cotización)',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.red,
+                                      fontStyle: FontStyle.italic),
+                                ),
+                            ],
+                          ),
+                        ),
+
+                        // Columna 2: Controles de Precio y Cantidad (Fijo)
+                        _buildPriceAndQuantityControls(
+                            context, item, currencyFormatter),
+                      ],
+                    ),
+                  ),
                 );
               },
             ),
           ),
+
+          // Resumen Final: Neto, Impuestos, Total
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -144,19 +344,45 @@ class NewOrderScreen extends StatelessWidget {
                     blurRadius: 5)
               ],
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            child: Column(
               children: [
-                const Text(
-                  'Total Estimado:',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                // 1. Total Neto
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Total Neto Estimado:',
+                        style: TextStyle(fontSize: 16)),
+                    Text(currencyFormatter.format(totalNetoEstimado),
+                        style: const TextStyle(fontSize: 16)),
+                  ],
                 ),
-                Text(
-                  priceFormatter.format(totalAmount),
-                  style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.green),
+                const SizedBox(height: 5),
+                // 2. Impuestos (Placeholder)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Impuestos (Estimado):',
+                        style: TextStyle(fontSize: 16)),
+                    Text(currencyFormatter.format(totalImpuestosEstimado),
+                        style: const TextStyle(fontSize: 16)),
+                  ],
+                ),
+                const Divider(),
+                // 3. Total Final
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Total Final:',
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold)),
+                    Text(
+                      currencyFormatter.format(totalFinalEstimado),
+                      style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green),
+                    ),
+                  ],
                 ),
               ],
             ),

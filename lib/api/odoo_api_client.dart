@@ -1,4 +1,4 @@
-// lib/api/odoo_api_client.dart (Completo)
+// lib/api/odoo_api_client.dart
 
 import 'dart:convert';
 import 'dart:async';
@@ -459,9 +459,8 @@ class OdooApiClient {
     if (customerPartnerId == 0) {
       throw Exception('Error: No se ha seleccionado un cliente válido.');
     }
-    if (shippingAddressId == 0) {
-      throw Exception('Error: Debe seleccionar una dirección de entrega.');
-    }
+    // ✅ CORRECCIÓN: Se eliminó la validación estricta de que shippingAddressId sea diferente de 0.
+    // El ID del cliente principal (partner_id) es un ID válido para el envío.
 
     final url = Uri.parse('$_baseUrl/jsonrpc');
     const String model = 'sale.order';
@@ -481,7 +480,8 @@ class OdooApiClient {
 
     final Map<String, dynamic> orderValues = {
       'partner_id': customerPartnerId,
-      'partner_shipping_id': shippingAddressId,
+      'partner_shipping_id':
+          shippingAddressId, // Usará el ID proporcionado (puede ser el principal)
       'user_id': _userId,
       'order_line': orderLines,
       'validity_date': DateTime.now()

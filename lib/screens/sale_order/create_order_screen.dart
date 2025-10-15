@@ -37,7 +37,12 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
 
   bool _isLoading = true;
   bool _isLoadingMore = false;
-  int? _selectedAddressId; // <-- ID de la dirección seleccionada
+  int? _selectedAddressId;
+
+  // ✅ NUEVOS CAMPOS DE ESTADO PARA LOS DATOS REQUERIDOS EN NewOrderScreen
+  String _selectedAddressName = '';
+  String _selectedAddressStreet = '';
+
   int? _selectedCategoryId;
 
   @override
@@ -163,7 +168,6 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
 
     return PopScope(
       canPop: false,
-      // ✅ CORRECCIÓN: Usar onPopInvokedWithResult para evitar el warning 'deprecated_member_use'
       onPopInvokedWithResult: (bool didPop, dynamic result) async {
         if (didPop) return;
         final navigator = Navigator.of(context);
@@ -187,11 +191,12 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                   IconButton(
                     icon: const Icon(Icons.shopping_cart),
                     onPressed: () {
-                      // 🚨 VALIDACIÓN Y NAVEGACIÓN CORREGIDA
-                      if (_selectedAddressId == null) {
+                      // 🚨 VALIDACIÓN DE DIRECCIÓN
+                      if (_selectedAddressId == null ||
+                          _selectedAddressId == 0) {
                         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                             content: Text(
-                                'Debe seleccionar una dirección de entrega.'),
+                                'Debe seleccionar o asignar una dirección de entrega.'),
                             backgroundColor: Colors.orange));
                         return;
                       }
@@ -200,8 +205,10 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                         builder: (ctx) => NewOrderScreen(
                           isQuotation: widget.isQuotation,
                           customer: widget.customer,
-                          shippingAddressId:
-                              _selectedAddressId!, // <--- Enviando el ID
+                          shippingAddressId: _selectedAddressId!,
+                          // ✅ CORRECCIÓN CLAVE: Pasamos los nuevos argumentos requeridos
+                          shippingAddressName: _selectedAddressName,
+                          shippingAddressStreet: _selectedAddressStreet,
                         ),
                       ));
                     },
@@ -271,24 +278,57 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                 return Text('Error: ${snapshot.error}',
                     style: const TextStyle(color: Colors.red));
               }
+
               final addresses = snapshot.data ?? [];
-              if (addresses.isEmpty) {
-                return const Text('Cliente sin direcciones de entrega.');
+              final int mainPartnerId = widget.customer.id;
+
+              // 🚨 FUNCIÓN PARA ENCONTRAR UN ADDRESS EN LA LISTA
+              Map<String, dynamic> findAddress(int? id) {
+                return addresses.firstWhere((addr) => addr['id'] == id,
+                    orElse: () => {
+                          'id': mainPartnerId,
+                          'name': widget.customer.name,
+                          'street': 'Dirección Principal (ID: $mainPartnerId)',
+                        });
               }
-              // Inicializar _selectedAddressId si no está seleccionado y hay direcciones
+
+              // ✅ LÓGICA DE ASIGNACIÓN INICIAL Y FALLBACK
               WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (_selectedAddressId == null && addresses.isNotEmpty) {
+                if (!mounted) return;
+
+                if (addresses.isEmpty) {
+                  // Caso 1: No hay direcciones secundarias, usar principal
+                  if (_selectedAddressId == null ||
+                      _selectedAddressId != mainPartnerId) {
+                    setState(() {
+                      _selectedAddressId = mainPartnerId;
+                      _selectedAddressName = widget.customer.name;
+                      _selectedAddressStreet = 'Dirección Principal';
+                    });
+                  }
+                } else if (_selectedAddressId == null) {
+                  // Caso 2: Hay direcciones secundarias y nada seleccionado, usar la primera
+                  final firstAddr = findAddress(addresses.first['id'] as int);
                   setState(() {
-                    _selectedAddressId = addresses.first['id'] as int;
+                    _selectedAddressId = firstAddr['id'] as int;
+                    _selectedAddressName = firstAddr['name'] ?? '';
+                    _selectedAddressStreet = firstAddr['street'] ?? '';
                   });
                 }
               });
 
+              if (addresses.isEmpty) {
+                return const Text('Usando dirección principal del cliente.',
+                    style: TextStyle(
+                        fontStyle: FontStyle.italic, color: Colors.blue));
+              }
+
+              // Preseleccionar el ID actual o el primer ID disponible
+              final int initialId =
+                  _selectedAddressId ?? addresses.first['id'] as int;
+
               return DropdownButtonFormField<int>(
-                // Usar addresses.first['id'] como initialValue si es null
-                // para asegurar que el Dropdown tenga un valor inicial
-                initialValue:
-                    _selectedAddressId ?? addresses.first['id'] as int,
+                initialValue: initialId,
                 hint: const Text('Seleccione dirección de entrega...'),
                 isExpanded: true,
                 items: addresses.map((addr) {
@@ -298,8 +338,11 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                           overflow: TextOverflow.ellipsis));
                 }).toList(),
                 onChanged: (value) {
+                  final newSelection = findAddress(value);
                   setState(() {
                     _selectedAddressId = value;
+                    _selectedAddressName = newSelection['name'] ?? '';
+                    _selectedAddressStreet = newSelection['street'] ?? '';
                   });
                 },
               );
@@ -326,6 +369,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   }
 
   Widget _buildProductCatalog() {
+    // ... (resto del método se mantiene sin cambios)
     return Expanded(
       child: Column(
         children: [
@@ -354,7 +398,6 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                       }
                       _categories = snapshot.data!;
                       return DropdownButtonFormField<int>(
-                        // ✅ CORRECCIÓN: Añadir 'const' a los constructores (parte de las advertencias)
                         initialValue: _selectedCategoryId,
                         hint: const Text('Categoría'),
                         decoration: InputDecoration(

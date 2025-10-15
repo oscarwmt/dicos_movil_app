@@ -14,9 +14,12 @@ class CartProvider with ChangeNotifier {
   int get totalUniqueItems => _items.length;
   double get totalAmount {
     double total = 0.0;
-    _items.forEach((key, cartItem) {
-      total += cartItem.product.price * cartItem.quantity;
-    });
+    for (var item in _items.values) {
+      // ✅ CORRECCIÓN CLAVE: Solo se suma si el producto tiene stock.
+      if (item.product.stock > 0) {
+        total += item.product.price * item.quantity;
+      }
+    }
     return total;
   }
 
