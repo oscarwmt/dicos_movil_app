@@ -42,8 +42,9 @@ class CartItemCard extends StatelessWidget {
         );
       },
       onDismissed: (direction) {
+        // ✅ CORRECCIÓN CLAVE: Eliminar el ':' y el argumento innecesario 'isInStock'
         Provider.of<CartProvider>(context, listen: false)
-            .removeItem(cartItem.product.id, isInStock: isInStock);
+            .removeItem(cartItem.product.id);
       },
       child: Card(
         margin: const EdgeInsets.symmetric(horizontal: 15, vertical: 4),

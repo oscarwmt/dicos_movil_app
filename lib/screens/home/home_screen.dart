@@ -1,14 +1,16 @@
 // lib/screens/home/home_screen.dart
 
 import 'dart:async';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart'; // Contiene debugPrint
 import 'package:provider/provider.dart';
 import '../../api/odoo_api_client.dart';
 import '../../models/customer_model.dart';
 import '../../models/product_model.dart';
 import '../../providers/cart_provider.dart';
 import '../../widgets/product_card.dart';
-import '../sale_order/new_order_screen.dart';
+// ⚠️ Importar CreateOrderScreen (ya que es la pantalla de destino con los argumentos)
+import '../sale_order/create_order_screen.dart';
+// import '../sale_order/new_order_screen.dart'; // No se usa directamente aquí
 
 class HomeScreen extends StatefulWidget {
   final OdooApiClient apiClient;
@@ -29,6 +31,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _searchController = TextEditingController();
   Timer? _debounce;
 
+  // Propiedades de estado existentes
   late Future<List<Map<String, dynamic>>> _categoriesFuture;
   List<Product> _products = [];
   List<Map<String, dynamic>>? _categories;
@@ -48,6 +51,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _searchController.addListener(_onSearchChanged);
   }
 
+  // Métodos de lógica del Home Screen
   Future<void> _fetchSubCategories(int parentId) async {
     try {
       final subCats = await widget.apiClient.fetchSubCategories(parentId);
@@ -57,7 +61,10 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
     } catch (e) {
-      // Manejar error si es necesario
+      if (mounted) {
+        // ✅ CORRECCIÓN CLAVE: Reemplazar print() con debugPrint()
+        debugPrint('Error fetching subcategories: $e');
+      }
     }
   }
 
@@ -154,9 +161,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   icon: const Icon(Icons.shopping_cart_checkout),
                   onPressed: () {
                     if (cart.totalUniqueItems > 0) {
+                      // Corrección de Navegación (Línea 159)
                       Navigator.of(context).push(
                         MaterialPageRoute(
-                            builder: (ctx) => const NewOrderScreen()),
+                          builder: (ctx) => CreateOrderScreen(
+                            customer: widget.customer,
+                            isQuotation: false,
+                          ),
+                        ),
                       );
                     } else {
                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(

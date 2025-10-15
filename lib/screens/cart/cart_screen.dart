@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/cart_provider.dart';
 import '../../widgets/cart_item_card.dart';
-import '../sale_order/new_order_screen.dart';
+// ⚠️ IMPORTAR LA PANTALLA DE SELECCIÓN DE CLIENTE (Asumo que existe)
+import '../sale_order/customer_selector_screen.dart';
+// import '../sale_order/new_order_screen.dart'; // Ya no se usa directamente
 
 class CartScreen extends StatelessWidget {
   const CartScreen({super.key});
@@ -54,11 +56,14 @@ class CartScreen extends StatelessWidget {
                     backgroundColor: Theme.of(context).primaryColor,
                   ),
                   TextButton(
+                    // LÍNEA 61: CORRECCIÓN DE NAVEGACIÓN
                     onPressed: (totalItems > 0)
                         ? () {
                             Navigator.of(context).push(
                               MaterialPageRoute(
-                                builder: (ctx) => const NewOrderScreen(),
+                                // ✅ CORREGIDO: Navega al selector de cliente para iniciar el flujo
+                                builder: (ctx) =>
+                                    const CustomerSelectorScreen(),
                               ),
                             );
                           }

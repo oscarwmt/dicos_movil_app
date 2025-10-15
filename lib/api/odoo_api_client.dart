@@ -1,4 +1,4 @@
-// lib/api/odoo_api_client.dart
+// lib/api/odoo_api_client.dart (Completo)
 
 import 'dart:convert';
 import 'dart:async';
@@ -14,14 +14,8 @@ class OdooApiClient {
   factory OdooApiClient() => _instance;
   OdooApiClient._internal();
 
-  // final String _baseUrl = "https://pruebas-aplicacion.odoo.com";
-  // final String _dbName = "pruebas-aplicacion";
-  
-  import '../config/app_config.dart';
-  
-  final String _baseUrl = AppConfig.baseUrl;
-  final String _dbName = AppConfig.dbName;
-
+  final String _baseUrl = "https://pruebas-aplicacion.odoo.com";
+  final String _dbName = "pruebas-aplicacion";
   int? _userId;
   String? _sessionId;
   String _currentPassword = "";
@@ -146,7 +140,6 @@ class OdooApiClient {
         "property_payment_term_id",
         "x_studio_bloqueado_deuda",
         "credit"
-        // TODO: Asegúrate de añadir "property_product_pricelist" si lo vas a usar
       ],
       'limit': 2000,
       'order': "name asc",
@@ -460,11 +453,9 @@ class OdooApiClient {
   }
 
   Future<int> createSaleOrder(List<CartItem> cartItems,
-      {required int customerPartnerId, // Cliente principal
-      required int shippingAddressId, // <--- ID de la dirección de entrega
+      {required int customerPartnerId,
+      required int shippingAddressId,
       bool isQuotation = false}) async {
-    // <--- Indica si debe ser solo cotización
-
     if (customerPartnerId == 0) {
       throw Exception('Error: No se ha seleccionado un cliente válido.');
     }
@@ -476,11 +467,10 @@ class OdooApiClient {
     const String model = 'sale.order';
     const String method = 'create';
 
-    // 1. CREACIÓN DE LÍNEAS DE PEDIDO (Solo ID de Producto y Cantidad)
     final List<List<dynamic>> orderLines = cartItems.map((item) {
       return [
-        0, // Comando 0: CREATE
-        0, // ID temporal
+        0,
+        0,
         {
           'product_id': item.product.id,
           'product_uom_qty': item.quantity,
@@ -489,10 +479,9 @@ class OdooApiClient {
       ];
     }).toList();
 
-    // 2. VALORES DEL ENCABEZADO DEL PEDIDO
     final Map<String, dynamic> orderValues = {
       'partner_id': customerPartnerId,
-      'partner_shipping_id': shippingAddressId, // <--- Dirección de envío
+      'partner_shipping_id': shippingAddressId,
       'user_id': _userId,
       'order_line': orderLines,
       'validity_date': DateTime.now()
@@ -537,9 +526,7 @@ class OdooApiClient {
 
       final int orderId = responseBody['result'] as int;
 
-      // 3. CONFIRMACIÓN CONDICIONAL
       if (!isQuotation) {
-        // Si el cliente NO está bloqueado, CONFIRMAMOS inmediatamente
         await confirmSaleOrder(orderId);
       }
 
@@ -591,9 +578,6 @@ class OdooApiClient {
     }
   }
 
-  // ... (El resto de las funciones auxiliares se mantienen sin cambios) ...
-
-  // ...
   Future<void> reportOutOfStockDemand(
       List<CartItem> items, int partnerId) async {
     if (!isAuthenticated || items.isEmpty) return;

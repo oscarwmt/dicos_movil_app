@@ -30,7 +30,7 @@ class Product {
   });
 
   factory Product.fromJson(Map<String, dynamic> json, {int? templateId}) {
-    // --- 🛠️ Funciones de Conversión Segura (Números) ---
+    // --- Funciones de Conversión Segura (Números) ---
     double parseDouble(dynamic value) {
       if (value is num) return value.toDouble();
       if (value is String) return double.tryParse(value) ?? 0.0;
@@ -45,49 +45,36 @@ class Product {
     }
     // ----------------------------------------------------
 
-    // Lógica para la Categoría (que viene como lista [ID, Nombre])
+    // Lógica para la Categoría
     final categoryData = json['categ_id'];
     int? catId;
     String? catName;
     if (categoryData is List && categoryData.isNotEmpty) {
       catId = categoryData[0] as int;
-      // Convertimos el nombre de categoría a String de forma segura
       catName = categoryData[1]?.toString();
     }
 
-    // --- 🛠️ Lógica de Conversión Segura (Strings) ---
-    // ✅ CORRECCIÓN CLAVE: Convertir cualquier valor inesperado (como bool) a String
+    // --- Lógica de Conversión Segura (Strings) ---
 
-    // Convertir descripción
     final rawDescription = json['description_sale'];
-    final safeDescription =
-        rawDescription == null ? null : rawDescription.toString();
+    final safeDescription = rawDescription?.toString();
 
-    // Convertir unidad de venta
     final rawSalesUnit = json['x_studio_unidad_de_venta_nombre'];
-    final safeSalesUnit = rawSalesUnit == null ? null : rawSalesUnit.toString();
+    final safeSalesUnit = rawSalesUnit?.toString();
 
-    // Convertir referencia interna
     final rawInternalRef = json['default_code'];
-    // Si la ref. interna es nula, usamos String vacía ('') ya que no es opcional en el constructor
-    final safeInternalRef =
-        rawInternalRef == null ? '' : rawInternalRef.toString();
+    final safeInternalRef = rawInternalRef?.toString() ?? '';
 
     return Product(
       id: templateId ?? json['id'] as int,
       name: json['name'] as String,
-
-      // Conversiones a número
       price: parseDouble(json['list_price']),
       stock: parseDouble(json['qty_available']),
       unitsPerPackage: parseInt(json['x_studio_unidades_por_paquete']),
-
-      // Conversiones a String (Soluciona el error 'type 'bool' is not a subtype of type 'String?'')
       category: catName,
       description: safeDescription,
       salesUnit: safeSalesUnit,
       internalReference: safeInternalRef,
-
       categoryId: catId,
     );
   }

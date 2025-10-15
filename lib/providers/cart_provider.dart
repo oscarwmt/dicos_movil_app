@@ -1,83 +1,84 @@
 // lib/providers/cart_provider.dart
 
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import '../models/cart_item_model.dart';
-import '../models/product_model.dart';
 import '../models/customer_model.dart';
 
 class CartProvider with ChangeNotifier {
-  List<CartItem> _inStockItems = [];
-  List<CartItem> _outOfStockItems = [];
-  Customer? _customer;
+  final Map<int, CartItem> _items = {};
+  Customer? _currentCustomer;
 
-  List<CartItem> get inStockItems => [..._inStockItems];
-  List<CartItem> get outOfStockItems => [..._outOfStockItems];
-  Customer? get customer => _customer;
-
-  int get totalUniqueItems => _inStockItems.length + _outOfStockItems.length;
-
+  // --- Getters ---
+  List<CartItem> get items => _items.values.toList();
+  Customer? get currentCustomer => _currentCustomer;
+  int get totalUniqueItems => _items.length;
   double get totalAmount {
-    var total = 0.0;
-    for (var cartItem in _inStockItems) {
+    double total = 0.0;
+    _items.forEach((key, cartItem) {
       total += cartItem.product.price * cartItem.quantity;
-    }
+    });
     return total;
   }
 
-  void setCustomer(Customer newCustomer) {
-    if (_customer == null || _customer!.id != newCustomer.id) {
-      clear();
-      _customer = newCustomer;
-      notifyListeners();
-    }
+  List<CartItem> get inStockItems =>
+      _items.values.where((item) => item.product.stock > 0).toList();
+  List<CartItem> get outOfStockItems =>
+      _items.values.where((item) => item.product.stock <= 0).toList();
+
+  // --- Métodos de Mutación ---
+
+  void setCustomer(Customer customer) {
+    _currentCustomer = customer;
+    notifyListeners();
   }
 
-  void addItem(Product product, {int quantity = 1}) {
-    if (product.stock > 0) {
-      _addToCorrectList(_inStockItems, product, quantity);
+  void addItem(product, {int quantity = 1}) {
+    final productId = product.id;
+    if (_items.containsKey(productId)) {
+      _items.update(
+        productId,
+        (existing) => CartItem(
+          product: existing.product,
+          quantity: existing.quantity + quantity,
+        ),
+      );
     } else {
-      _addToCorrectList(_outOfStockItems, product, quantity);
+      _items.putIfAbsent(
+        productId,
+        () => CartItem(product: product, quantity: quantity),
+      );
     }
     notifyListeners();
   }
 
-  void _addToCorrectList(List<CartItem> list, Product product, int quantity) {
-    final existingIndex =
-        list.indexWhere((item) => item.product.id == product.id);
-    if (existingIndex >= 0) {
-      list[existingIndex].quantity += quantity;
-    } else {
-      list.add(CartItem(
-        product: product,
-        quantity: quantity,
-      ));
-    }
-  }
-
-  void removeSingleItem(int productId, {required bool isInStock}) {
-    final list = isInStock ? _inStockItems : _outOfStockItems;
-    final existingIndex =
-        list.indexWhere((item) => item.product.id == productId);
-    if (existingIndex < 0) return;
-
-    if (list[existingIndex].quantity > 1) {
-      list[existingIndex].quantity--;
-    } else {
-      list.removeAt(existingIndex);
-    }
+  void removeItem(int productId) {
+    _items.remove(productId);
     notifyListeners();
   }
 
-  void removeItem(int productId, {required bool isInStock}) {
-    final list = isInStock ? _inStockItems : _outOfStockItems;
-    list.removeWhere((item) => item.product.id == productId);
+  // ✅ CORRECCIÓN CLAVE: El método ya NO tiene el argumento 'required bool isInStock'
+  void removeSingleItem(int productId) {
+    if (!_items.containsKey(productId)) {
+      return;
+    }
+
+    if (_items[productId]!.quantity > 1) {
+      _items.update(
+        productId,
+        (existing) => CartItem(
+          product: existing.product,
+          quantity: existing.quantity - 1,
+        ),
+      );
+    } else {
+      _items.remove(productId);
+    }
     notifyListeners();
   }
 
   void clear() {
-    _inStockItems = [];
-    _outOfStockItems = [];
-    _customer = null;
+    _items.clear();
+    _currentCustomer = null;
     notifyListeners();
   }
 }

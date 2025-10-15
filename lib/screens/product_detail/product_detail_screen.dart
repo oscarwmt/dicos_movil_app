@@ -120,8 +120,9 @@ class ProductDetailScreen extends StatelessWidget {
               action: SnackBarAction(
                 label: 'DESHACER',
                 onPressed: () {
-                  cart.removeSingleItem(product.id,
-                      isInStock: product.stock > 0);
+                  //cart.removeSingleItem(product.id,
+                  //    isInStock: product.stock > 0);
+                  cart.removeSingleItem(product.id);
                 },
               ),
             ),

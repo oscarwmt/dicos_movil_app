@@ -11,13 +11,13 @@ import '../../providers/cart_provider.dart';
 class NewOrderScreen extends StatelessWidget {
   final bool isQuotation;
   final Customer customer;
-  final int shippingAddressId; // <--- Nuevo campo
+  final int shippingAddressId;
 
   const NewOrderScreen({
     super.key,
     required this.isQuotation,
     required this.customer,
-    required this.shippingAddressId, // <--- Requerido
+    required this.shippingAddressId,
   });
 
   Future<void> _handleSaveOrder(BuildContext context, CartProvider cart) async {
@@ -31,6 +31,10 @@ class NewOrderScreen extends StatelessWidget {
     final OdooApiClient apiClient = OdooApiClient();
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
 
+    // Capturar el Navigator y el ScaffoldMessenger antes del async gap
+    final navigator = Navigator.of(context);
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+
     try {
       // Mostrar indicador de carga
       showDialog(
@@ -39,37 +43,37 @@ class NewOrderScreen extends StatelessWidget {
         barrierDismissible: false,
       );
 
-      // LLAMADA CLAVE: Crear el pedido con la dirección y la condición de cotización
       final int orderId = await apiClient.createSaleOrder(
         cart.items,
         customerPartnerId: customer.id,
-        shippingAddressId: shippingAddressId, // Enviando ID de dirección
-        isQuotation: isQuotation, // Enviando la condición
+        shippingAddressId: shippingAddressId,
+        isQuotation: isQuotation,
       );
 
-      // Reportar productos sin stock si aplica
       final outOfStockItems =
           cart.items.where((item) => item.product.stock <= 0).toList();
       if (outOfStockItems.isNotEmpty) {
         await apiClient.reportOutOfStockDemand(outOfStockItems, customer.id);
       }
 
-      // Limpiar el carrito y cerrar el modal
+      // Limpiar el carrito y cerrar el modal.
       cart.clear();
-      Navigator.of(context).pop(); // Cerrar el indicador de carga
-      Navigator.of(context)
-          .popUntil((route) => route.isFirst); // Volver al inicio
+      if (navigator.canPop()) {
+        navigator.pop();
+      }
+      navigator.popUntil((route) => route.isFirst);
 
-      // Mostrar mensaje de éxito
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      scaffoldMessenger.showSnackBar(SnackBar(
         content: Text(
             '¡${isQuotation ? "Cotización" : "Pedido"} $orderId creado y ${isQuotation ? "pendiente de aprobación" : "CONFIRMADO"}!'),
         backgroundColor: Colors.green,
         duration: const Duration(seconds: 4),
       ));
     } catch (e) {
-      Navigator.of(context).pop(); // Cerrar el indicador de carga
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      if (navigator.canPop()) {
+        navigator.pop();
+      }
+      scaffoldMessenger.showSnackBar(SnackBar(
         content: Text('Error al grabar el pedido: $e'),
         backgroundColor: Colors.red,
         duration: const Duration(seconds: 5),
@@ -91,34 +95,34 @@ class NewOrderScreen extends StatelessWidget {
       ),
       body: Column(
         children: [
-          // Sección de Encabezado (Cliente y Dirección)
           Container(
             padding: const EdgeInsets.all(16),
             width: double.infinity,
-            color: Colors.blueGrey[50],
+            color: const Color(0xFFECEFF1),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                const Text(
+                  'Cliente:',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                // ✅ CORRECCIÓN DE ADVERTENCIA: Usamos el valor directamente
                 Text(
-                  'Cliente: ${customer.name}',
-                  style: const TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.bold),
+                  customer.name,
+                  style: const TextStyle(fontSize: 16),
                 ),
                 Text(
-                  'Dirección ID: $shippingAddressId', // Mostrar el ID de la dirección
+                  'Dirección ID: $shippingAddressId',
                   style: const TextStyle(fontSize: 14, color: Colors.grey),
                 ),
-                // Aquí podrías hacer otra llamada a la API para obtener el nombre de la calle si lo necesitas
               ],
             ),
           ),
-
           Expanded(
             child: ListView.builder(
               itemCount: cart.items.length,
               itemBuilder: (ctx, i) {
                 final CartItem item = cart.items[i];
-                // Aquí va tu widget de ítem de carrito
                 return ListTile(
                   title: Text(item.product.name),
                   subtitle: Text(
@@ -135,7 +139,7 @@ class NewOrderScreen extends StatelessWidget {
               color: Colors.white,
               boxShadow: [
                 BoxShadow(
-                    color: Colors.grey.withOpacity(0.2),
+                    color: Colors.grey.withAlpha((255 * 0.2).round()),
                     spreadRadius: 2,
                     blurRadius: 5)
               ],
