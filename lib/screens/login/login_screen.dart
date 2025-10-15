@@ -1,4 +1,4 @@
-// lib/login/login_screen.dart
+// lib/screens/login/login_screen.dart
 
 import 'package:dicos_movil_app/api/odoo_api_client.dart';
 import 'package:dicos_movil_app/screens/dashboard_screen.dart';
@@ -19,7 +19,6 @@ class _LoginScreenState extends State<LoginScreen> {
   final OdooApiClient _apiClient = OdooApiClient();
 
   Future<void> _login() async {
-    // Ocultar el teclado si está abierto
     FocusScope.of(context).unfocus();
 
     if (_formKey.currentState!.validate()) {
@@ -28,24 +27,20 @@ class _LoginScreenState extends State<LoginScreen> {
       });
 
       try {
-        // 1. Autenticar al usuario
         await _apiClient.authenticate(
           login: _emailController.text,
           password: _passwordController.text,
         );
 
-        // 2. Si la autenticación es exitosa, buscar los datos del usuario
         final userData = await _apiClient.fetchUserDetails();
 
         if (!mounted) return;
 
-        // 3. Navegar a la nueva pantalla Dashboard y pasarle los datos
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
               builder: (ctx) => DashboardScreen(userData: userData)),
         );
       } catch (e) {
-        // Asegurarnos de detener el indicador de carga en caso de error
         if (mounted) {
           setState(() {
             _isLoading = false;
@@ -84,11 +79,7 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Image.asset(
-                  // CORRECCIÓN: Usamos el nombre de archivo correcto "dicos.png"
-                  'assets/images/dicos.png',
-                  height: 120, // Puedes ajustar la altura
-                ),
+                Image.asset('assets/images/dicos.png', height: 120),
                 const SizedBox(height: 40),
                 TextFormField(
                   controller: _emailController,

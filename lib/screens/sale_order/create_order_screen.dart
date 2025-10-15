@@ -2,7 +2,6 @@
 
 import 'dart:async';
 import 'package:flutter/material.dart';
-// ✅ CORRECCIÓN: Se reemplazó el punto por dos puntos en la importación.
 import 'package:provider/provider.dart';
 import '../../api/odoo_api_client.dart';
 import '../../models/customer_model.dart';
@@ -13,7 +12,13 @@ import 'new_order_screen.dart';
 
 class CreateOrderScreen extends StatefulWidget {
   final Customer customer;
-  const CreateOrderScreen({super.key, required this.customer});
+  final bool isQuotation;
+
+  const CreateOrderScreen({
+    super.key,
+    required this.customer,
+    required this.isQuotation,
+  });
 
   @override
   State<CreateOrderScreen> createState() => _CreateOrderScreenState();
@@ -32,7 +37,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
 
   bool _isLoading = true;
   bool _isLoadingMore = false;
-  int? _selectedAddressId;
+  int? _selectedAddressId; // <-- ID de la dirección seleccionada
   int? _selectedCategoryId;
 
   @override
@@ -47,23 +52,23 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   }
 
   Future<void> _fetchAndSetProducts({bool loadMore = false}) async {
-    if (loadMore && _isLoadingMore) {
-      return;
+    if (loadMore && _isLoadingMore) return;
+
+    if (loadMore) {
+      setState(() {
+        _isLoadingMore = true;
+      });
+    } else {
+      setState(() {
+        _isLoading = true;
+      });
     }
 
-    setState(() {
-      if (loadMore) {
-        _isLoadingMore = true;
-      } else {
-        _isLoading = true;
-      }
-    });
-
     try {
+      final domain = _buildDomain();
       final newProducts = await _apiClient.fetchProducts(
         offset: loadMore ? _products.length : 0,
-        categoryId: _selectedCategoryId,
-        searchQuery: _searchController.text,
+        domain: domain,
       );
 
       if (mounted) {
@@ -90,6 +95,18 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     }
   }
 
+  List<dynamic> _buildDomain() {
+    final domain = [];
+    final query = _searchController.text;
+    if (query.isNotEmpty) {
+      domain.add(['name', 'ilike', query]);
+    }
+    if (_selectedCategoryId != null) {
+      domain.add(['categ_id', 'child_of', _selectedCategoryId]);
+    }
+    return domain;
+  }
+
   void _onScroll() {
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 300) {
@@ -98,12 +115,38 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   }
 
   void _onSearchChanged() {
-    if (_debounce?.isActive ?? false) {
-      _debounce!.cancel();
-    }
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
     _debounce = Timer(const Duration(milliseconds: 500), () {
       _fetchAndSetProducts();
     });
+  }
+
+  Future<bool> _onWillPop() async {
+    final cart = Provider.of<CartProvider>(context, listen: false);
+    if (cart.totalUniqueItems == 0) return true;
+
+    final currentContext = context;
+    final shouldPop = await showDialog<bool>(
+      context: currentContext,
+      builder: (context) => AlertDialog(
+        title: const Text('¿Descartar Pedido?'),
+        content:
+            const Text('Si sales ahora, los productos agregados se perderán.'),
+        actions: <Widget>[
+          TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () {
+              cart.clear();
+              Navigator.of(context).pop(true);
+            },
+            child: const Text('Descartar', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    return shouldPop ?? false;
   }
 
   @override
@@ -116,50 +159,81 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Pedido para ${widget.customer.name}'),
-        actions: [
-          Consumer<CartProvider>(
-            builder: (ctx, cart, child) => Stack(
-              alignment: Alignment.center,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.shopping_cart),
-                  onPressed: () {
-                    Navigator.of(context).push(MaterialPageRoute(
-                        builder: (ctx) => const NewOrderScreen()));
-                  },
-                ),
-                if (cart.items.isNotEmpty)
-                  Positioned(
-                    right: 8,
-                    top: 8,
-                    child: Container(
-                      padding: const EdgeInsets.all(2),
-                      decoration: BoxDecoration(
-                          color: Colors.red,
-                          borderRadius: BorderRadius.circular(10)),
-                      constraints:
-                          const BoxConstraints(minWidth: 16, minHeight: 16),
-                      child: Text(
-                        cart.items.length.toString(),
-                        style:
-                            const TextStyle(color: Colors.white, fontSize: 10),
-                        textAlign: TextAlign.center,
+    final title = widget.isQuotation ? 'Nueva Cotización' : 'Nuevo Pedido';
+
+    return PopScope(
+      canPop: false,
+      // ✅ CORRECCIÓN: Usar onPopInvokedWithResult para evitar el warning 'deprecated_member_use'
+      onPopInvokedWithResult: (bool didPop, dynamic result) async {
+        if (didPop) return;
+        final navigator = Navigator.of(context);
+        final bool shouldPop = await _onWillPop();
+        if (shouldPop) {
+          navigator.pop();
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text('$title para ${widget.customer.name}'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: () => _fetchAndSetProducts(),
+            ),
+            Consumer<CartProvider>(
+              builder: (ctx, cart, child) => Stack(
+                alignment: Alignment.center,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.shopping_cart),
+                    onPressed: () {
+                      // 🚨 VALIDACIÓN Y NAVEGACIÓN CORREGIDA
+                      if (_selectedAddressId == null) {
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                            content: Text(
+                                'Debe seleccionar una dirección de entrega.'),
+                            backgroundColor: Colors.orange));
+                        return;
+                      }
+
+                      Navigator.of(context).push(MaterialPageRoute(
+                        builder: (ctx) => NewOrderScreen(
+                          isQuotation: widget.isQuotation,
+                          customer: widget.customer,
+                          shippingAddressId:
+                              _selectedAddressId!, // <--- Enviando el ID
+                        ),
+                      ));
+                    },
+                  ),
+                  if (cart.totalUniqueItems > 0)
+                    Positioned(
+                      right: 8,
+                      top: 8,
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(10)),
+                        constraints:
+                            const BoxConstraints(minWidth: 16, minHeight: 16),
+                        child: Text(cart.totalUniqueItems.toString(),
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 10),
+                            textAlign: TextAlign.center),
                       ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          _buildOrderHeader(),
-          _buildProductCatalog(),
-        ],
+          ],
+        ),
+        body: Column(
+          children: [
+            _buildOrderHeader(),
+            _buildProductCatalog(),
+          ],
+        ),
       ),
     );
   }
@@ -181,7 +255,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                       overflow: TextOverflow.ellipsis)),
               TextButton(
                   onPressed: () {
-                    Navigator.of(context).pop();
+                    Navigator.of(context).maybePop();
                   },
                   child: const Text('Cambiar')),
             ],
@@ -201,8 +275,20 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
               if (addresses.isEmpty) {
                 return const Text('Cliente sin direcciones de entrega.');
               }
+              // Inicializar _selectedAddressId si no está seleccionado y hay direcciones
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (_selectedAddressId == null && addresses.isNotEmpty) {
+                  setState(() {
+                    _selectedAddressId = addresses.first['id'] as int;
+                  });
+                }
+              });
+
               return DropdownButtonFormField<int>(
-                initialValue: _selectedAddressId,
+                // Usar addresses.first['id'] como initialValue si es null
+                // para asegurar que el Dropdown tenga un valor inicial
+                initialValue:
+                    _selectedAddressId ?? addresses.first['id'] as int,
                 hint: const Text('Seleccione dirección de entrega...'),
                 isExpanded: true,
                 items: addresses.map((addr) {
@@ -224,23 +310,16 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
             children: [
               Icon(Icons.payment, color: Colors.grey.shade700, size: 20),
               const SizedBox(width: 8),
-              const Text(
-                'Plazo de Pago: ',
-                style: TextStyle(fontSize: 14, color: Colors.black54),
-              ),
+              const Text('Plazo de Pago: ',
+                  style: TextStyle(fontSize: 14, color: Colors.black54)),
               Expanded(
-                child: Text(
-                  widget.customer.paymentTerm,
-                  style: const TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.bold),
-                  overflow: TextOverflow.ellipsis,
-                ),
+                child: Text(widget.customer.paymentTerm,
+                    style: const TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.bold),
+                    overflow: TextOverflow.ellipsis),
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          const Text('Info de créditos pendientes (Próximamente)',
-              style: TextStyle(color: Colors.grey, fontSize: 12)),
         ],
       ),
     );
@@ -275,6 +354,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                       }
                       _categories = snapshot.data!;
                       return DropdownButtonFormField<int>(
+                        // ✅ CORRECCIÓN: Añadir 'const' a los constructores (parte de las advertencias)
                         initialValue: _selectedCategoryId,
                         hint: const Text('Categoría'),
                         decoration: InputDecoration(
@@ -292,9 +372,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                           }),
                         ],
                         onChanged: (value) {
-                          setState(() {
-                            _selectedCategoryId = value;
-                          });
+                          _selectedCategoryId = value;
                           _fetchAndSetProducts();
                         },
                       );

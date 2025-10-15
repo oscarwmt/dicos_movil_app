@@ -4,148 +4,95 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/cart_provider.dart';
 import '../../widgets/cart_item_card.dart';
-import '../../api/odoo_api_client.dart';
+import '../sale_order/new_order_screen.dart';
 
 class CartScreen extends StatelessWidget {
   const CartScreen({super.key});
 
-  Future<void> _placeOrder(BuildContext context, CartProvider cart) async {
-    final client = OdooApiClient();
-
-    if (cart.itemCount == 0) return;
-
-    final messenger = ScaffoldMessenger.of(context);
-    final navigator = Navigator.of(context);
-
-    try {
-      messenger.showSnackBar(
-        const SnackBar(
-            content: Text('Creando pedido en Odoo...'),
-            duration: Duration(seconds: 3)),
-      );
-
-      final int orderId = await client.createSaleOrder(cart.items);
-
-      cart.clear();
-
-      navigator.pop();
-
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text('¡Pedido creado con éxito! ID: $orderId'),
-          backgroundColor: Colors.green,
-          duration: const Duration(seconds: 5),
-        ),
-      );
-    } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-              'Fallo al crear pedido: ${e.toString().replaceAll('Exception: ', '')}'),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 8),
-        ),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final cart = Provider.of<CartProvider>(context);
+    final totalItems = cart.totalUniqueItems;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Mi Carrito de Compras'),
-        centerTitle: true,
-        actions: [
-          TextButton(
-            onPressed: cart.itemCount > 0 ? cart.clear : null,
-            child: const Text('Vaciar',
-                style: TextStyle(color: Colors.red, fontSize: 16)),
-          ),
+        title: const Text('Tu Carrito'),
+        actions: <Widget>[
+          if (totalItems > 0)
+            IconButton(
+              icon: const Icon(Icons.delete_sweep),
+              onPressed: () {
+                Provider.of<CartProvider>(context, listen: false).clear();
+              },
+            )
         ],
       ),
       body: Column(
         children: <Widget>[
-          if (cart.itemCount == 0)
-            const Expanded(
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.shopping_cart_outlined,
-                        size: 80, color: Colors.grey),
-                    SizedBox(height: 16),
-                    Text(
-                      'Tu carrito está vacío. Añade productos desde el catálogo.',
-                      style: TextStyle(fontSize: 18, color: Colors.grey),
-                    ),
-                  ],
-                ),
-              ),
-            )
-          else
-            Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.only(top: 8),
-                itemCount: cart.itemCount,
-                itemBuilder: (ctx, i) {
-                  return CartItemCard(item: cart.items[i]);
-                },
-              ),
-            ),
-
-          // Área del Total y Botón de Pagar
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withAlpha(25),
-                  blurRadius: 10,
-                  offset: const Offset(0, -2),
-                ),
-              ],
-            ),
-            child: Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Total a Pagar:',
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                    Text(
+          Card(
+            margin: const EdgeInsets.all(15),
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: <Widget>[
+                  const Text(
+                    'Total',
+                    style: TextStyle(fontSize: 20),
+                  ),
+                  const Spacer(),
+                  Chip(
+                    label: Text(
                       '\$${cart.totalAmount.toStringAsFixed(2)}',
                       style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.green[700]),
+                        color: Theme.of(context)
+                            .primaryTextTheme
+                            .titleLarge
+                            ?.color,
+                      ),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: cart.itemCount > 0
-                        ? () => _placeOrder(context, cart)
-                        : null,
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 15),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                    ),
-                    child: const Text('Finalizar Compra',
-                        style: TextStyle(fontSize: 18)),
+                    backgroundColor: Theme.of(context).primaryColor,
                   ),
-                ),
-              ],
+                  TextButton(
+                    onPressed: (totalItems > 0)
+                        ? () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (ctx) => const NewOrderScreen(),
+                              ),
+                            );
+                          }
+                        : null,
+                    child: Text(
+                      'ORDENAR AHORA',
+                      style: TextStyle(color: Theme.of(context).primaryColor),
+                    ),
+                  )
+                ],
+              ),
             ),
           ),
+          const SizedBox(height: 10),
+          Expanded(
+            child: ListView.builder(
+              itemCount: totalItems,
+              itemBuilder: (ctx, i) {
+                // Combina ambas listas para la visualización
+                final allItems = [
+                  ...cart.inStockItems,
+                  ...cart.outOfStockItems
+                ];
+                final item = allItems[i];
+                final isInStock = i < cart.inStockItems.length;
+
+                return CartItemCard(
+                  key: ValueKey(item.product.id),
+                  cartItem: item,
+                  isInStock: isInStock,
+                );
+              },
+            ),
+          )
         ],
       ),
     );

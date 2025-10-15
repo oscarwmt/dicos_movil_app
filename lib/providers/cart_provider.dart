@@ -1,78 +1,83 @@
 // lib/providers/cart_provider.dart
 
 import 'package:flutter/material.dart';
-import '../models/product_model.dart';
 import '../models/cart_item_model.dart';
+import '../models/product_model.dart';
+import '../models/customer_model.dart';
 
-// ChangeNotifier es lo que Provider usa para notificar a los widgets sobre cambios
 class CartProvider with ChangeNotifier {
-  // Lista privada de ítems en el carrito
-  final List<CartItem> _items = [];
+  List<CartItem> _inStockItems = [];
+  List<CartItem> _outOfStockItems = [];
+  Customer? _customer;
 
-  // Getter público para acceder a la lista (inmutable)
-  List<CartItem> get items => _items;
+  List<CartItem> get inStockItems => [..._inStockItems];
+  List<CartItem> get outOfStockItems => [..._outOfStockItems];
+  Customer? get customer => _customer;
 
-  // Getter para obtener el número total de ítems únicos
-  int get itemCount => _items.length;
+  int get totalUniqueItems => _inStockItems.length + _outOfStockItems.length;
 
-  // Getter para calcular el total de la compra
   double get totalAmount {
-    double total = 0.0;
-    for (var item in _items) {
-      total += item.product.price * item.quantity;
+    var total = 0.0;
+    for (var cartItem in _inStockItems) {
+      total += cartItem.product.price * cartItem.quantity;
     }
     return total;
   }
 
-  // Lógica para añadir un producto al carrito
+  void setCustomer(Customer newCustomer) {
+    if (_customer == null || _customer!.id != newCustomer.id) {
+      clear();
+      _customer = newCustomer;
+      notifyListeners();
+    }
+  }
+
   void addItem(Product product, {int quantity = 1}) {
-    // 1. Verificar si el producto ya está en el carrito
-    final existingItemIndex = _items.indexWhere(
-      (item) => item.product.id == product.id,
-    );
-
-    if (existingItemIndex >= 0) {
-      // 2. Si existe, simplemente actualiza la cantidad
-      _items[existingItemIndex].quantity += quantity;
+    if (product.stock > 0) {
+      _addToCorrectList(_inStockItems, product, quantity);
     } else {
-      // 3. Si no existe, añádelo como un nuevo ítem
-      _items.add(CartItem(product: product, quantity: quantity));
+      _addToCorrectList(_outOfStockItems, product, quantity);
     }
-
-    // Notificar a todos los widgets que escuchan que el carrito ha cambiado
     notifyListeners();
   }
 
-  // Lógica para remover un ítem completamente
-  void removeItem(int productId) {
-    _items.removeWhere((item) => item.product.id == productId);
-    notifyListeners();
-  }
-
-  // Lógica para decrementar la cantidad de un producto
-  void removeSingleItem(int productId) {
-    final existingItemIndex = _items.indexWhere(
-      (item) => item.product.id == productId,
-    );
-
-    if (existingItemIndex < 0) {
-      return; // No hay nada que remover
-    }
-
-    if (_items[existingItemIndex].quantity > 1) {
-      // Decrementa la cantidad
-      _items[existingItemIndex].quantity--;
+  void _addToCorrectList(List<CartItem> list, Product product, int quantity) {
+    final existingIndex =
+        list.indexWhere((item) => item.product.id == product.id);
+    if (existingIndex >= 0) {
+      list[existingIndex].quantity += quantity;
     } else {
-      // Si la cantidad es 1, remueve el ítem completo
-      _items.removeAt(existingItemIndex);
+      list.add(CartItem(
+        product: product,
+        quantity: quantity,
+      ));
     }
+  }
 
+  void removeSingleItem(int productId, {required bool isInStock}) {
+    final list = isInStock ? _inStockItems : _outOfStockItems;
+    final existingIndex =
+        list.indexWhere((item) => item.product.id == productId);
+    if (existingIndex < 0) return;
+
+    if (list[existingIndex].quantity > 1) {
+      list[existingIndex].quantity--;
+    } else {
+      list.removeAt(existingIndex);
+    }
     notifyListeners();
   }
 
-  // Lógica para vaciar completamente el carrito
+  void removeItem(int productId, {required bool isInStock}) {
+    final list = isInStock ? _inStockItems : _outOfStockItems;
+    list.removeWhere((item) => item.product.id == productId);
+    notifyListeners();
+  }
+
   void clear() {
-    _items.clear();
+    _inStockItems = [];
+    _outOfStockItems = [];
+    _customer = null;
     notifyListeners();
   }
 }

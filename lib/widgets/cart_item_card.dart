@@ -6,102 +6,62 @@ import '../models/cart_item_model.dart';
 import '../providers/cart_provider.dart';
 
 class CartItemCard extends StatelessWidget {
-  final CartItem item;
+  final CartItem cartItem;
+  final bool isInStock;
 
-  const CartItemCard({super.key, required this.item});
+  const CartItemCard(
+      {super.key, required this.cartItem, required this.isInStock});
 
   @override
   Widget build(BuildContext context) {
-    // Escuchamos el proveedor para llamar a los métodos de manipulación
-    final cart = Provider.of<CartProvider>(context, listen: false);
-
-    // Permite deslizar para eliminar
     return Dismissible(
-      key: ValueKey(item.product.id),
+      key: ValueKey('${cartItem.product.id}_${isInStock ? 'in' : 'out'}'),
+      background: Container(
+        color: Theme.of(context).colorScheme.error,
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        margin: const EdgeInsets.symmetric(horizontal: 15, vertical: 4),
+        child: const Icon(Icons.delete, color: Colors.white, size: 40),
+      ),
       direction: DismissDirection.endToStart,
-      onDismissed: (direction) {
-        cart.removeItem(item.product.id);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${item.product.name} eliminado del carrito.'),
-            duration: const Duration(seconds: 1),
+      confirmDismiss: (direction) {
+        return showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('¿Estás seguro?'),
+            content: const Text('¿Quieres eliminar este artículo?'),
+            actions: <Widget>[
+              TextButton(
+                  child: const Text('No'),
+                  onPressed: () => Navigator.of(ctx).pop(false)),
+              TextButton(
+                  child: const Text('Sí'),
+                  onPressed: () => Navigator.of(ctx).pop(true)),
+            ],
           ),
         );
       },
-      // Fondo rojo al deslizar
-      background: Container(
-        color: Colors.red,
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 20),
-        margin: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
-        child: const Icon(Icons.delete, color: Colors.white, size: 30),
-      ),
+      onDismissed: (direction) {
+        Provider.of<CartProvider>(context, listen: false)
+            .removeItem(cartItem.product.id, isInStock: isInStock);
+      },
       child: Card(
         margin: const EdgeInsets.symmetric(horizontal: 15, vertical: 4),
-        elevation: 2,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         child: Padding(
           padding: const EdgeInsets.all(8),
           child: ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: SizedBox(
-                width: 60,
-                height: 60,
-                // CARGA DE IMAGEN SEGURA (funciona en carrito porque hay pocas)
-                child: Image.network(
-                  item.product.imageUrl.isEmpty
-                      ? 'https://placehold.co/60x60/cccccc/000000?text=IMG'
-                      : item.product.imageUrl,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return const Center(
-                        child: Icon(Icons.shopping_bag, color: Colors.grey));
-                  },
+            leading: CircleAvatar(
+              child: Padding(
+                padding: const EdgeInsets.all(5),
+                child: FittedBox(
+                  child: Text('\$${cartItem.product.price}'),
                 ),
               ),
             ),
-            title: Text(
-              item.product.name,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
+            title: Text(cartItem.product.name),
             subtitle: Text(
-              'Subtotal: \$${(item.product.price * item.quantity).toStringAsFixed(2)}',
-              style: TextStyle(color: Colors.grey[700]),
-            ),
-            trailing: SizedBox(
-              width: 120,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  // Botón de Decremento
-                  IconButton(
-                    icon: const Icon(Icons.remove_circle_outline,
-                        color: Colors.red),
-                    onPressed: () {
-                      cart.removeSingleItem(
-                          item.product.id); // Llama al provider
-                    },
-                  ),
-                  // Cantidad
-                  Text(
-                    '${item.quantity}',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 16),
-                  ),
-                  // Botón de Incremento
-                  IconButton(
-                    icon: const Icon(Icons.add_circle_outline,
-                        color: Colors.green),
-                    onPressed: () {
-                      cart.addItem(item.product,
-                          quantity: 1); // Llama al provider
-                    },
-                  ),
-                ],
-              ),
-            ),
+                'Total: \$${(cartItem.product.price * cartItem.quantity)}'),
+            trailing: Text('${cartItem.quantity} x'),
           ),
         ),
       ),

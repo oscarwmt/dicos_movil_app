@@ -17,6 +17,9 @@ class ProductCard extends StatelessWidget {
     final cart = Provider.of<CartProvider>(context, listen: false);
     final priceFormatter = NumberFormat('#,##0', 'es_CL');
 
+    // ✅ CORRECCIÓN: Definición segura del valor de la unidad de venta
+    final String safeSalesUnit = product.salesUnit ?? 'Unidad';
+
     return Card(
       elevation: 4,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -32,74 +35,92 @@ class ProductCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // ✅ AJUSTADO: Se reduce el flex para hacer la imagen un poco más pequeña.
             Expanded(
-              flex:
-                  5, // Antes era 2, ajusta este valor si necesitas más o menos espacio
+              flex: 5, // Flex para la imagen
               child: Container(
                 color: Colors.grey[200],
-                padding: const EdgeInsets.all(4.0),
                 child: product.imageUrl.isNotEmpty
                     ? Image.network(
                         product.imageUrl,
-                        fit: BoxFit.contain,
+                        fit: BoxFit.cover,
                         errorBuilder: (context, error, stackTrace) =>
                             const Icon(Icons.broken_image, color: Colors.grey),
                       )
                     : const Icon(Icons.image, size: 60, color: Colors.grey),
               ),
             ),
-
-            // ✅ AJUSTADO: Se aumenta el flex para dar más espacio a los detalles.
             Expanded(
-              flex: 4, // Antes era flexible, ahora tiene una proporción fija
+              flex: 6, // Flex para el contenido de texto
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(8.0, 8.0, 8.0, 4.0),
+                padding: const EdgeInsets.all(8.0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  mainAxisAlignment:
+                      MainAxisAlignment.spaceBetween, // Distribuye el espacio
                   children: [
-                    Text(
-                      product.name,
-                      style: const TextStyle(fontSize: 12),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          product.name,
+                          style: const TextStyle(fontSize: 12),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          // ✅ CORREGIDO: Usamos la variable segura
+                          safeSalesUnit,
+                          style: const TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey,
+                              fontStyle: FontStyle.italic),
+                        ),
+                      ],
                     ),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Precio del producto
-                        RichText(
-                          text: TextSpan(
-                            style: TextStyle(
-                                fontSize: 14,
-                                color: Theme.of(context).primaryColor,
-                                fontWeight: FontWeight.w600),
-                            children: [
-                              TextSpan(
-                                  text:
-                                      '\$${priceFormatter.format(product.price)}'),
-                              TextSpan(
-                                text: ' + IVA',
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              'COD: ${product.internalReference}',
+                              style: const TextStyle(
+                                  fontSize: 11, color: Colors.grey),
+                            ),
+                            RichText(
+                              text: TextSpan(
                                 style: TextStyle(
-                                    fontSize: 10,
-                                    color: Colors.grey.shade700,
-                                    fontWeight: FontWeight.normal),
+                                    fontSize: 14,
+                                    color: Theme.of(context).primaryColor,
+                                    fontWeight: FontWeight.w600),
+                                children: [
+                                  TextSpan(
+                                      text:
+                                          '\$${priceFormatter.format(product.price)}'),
+                                  TextSpan(
+                                    text: ' + IVA',
+                                    style: TextStyle(
+                                        fontSize: 10,
+                                        color: Colors.grey.shade700,
+                                        fontWeight: FontWeight.normal),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
-
-                        const SizedBox(
-                            height: 4), // Espacio entre precio y stock
-
-                        // ✅ AÑADIDO: Nueva línea para la cantidad a mano
+                        const SizedBox(height: 4),
                         Text(
-                          'Cantidad a Mano: ${product.qtyAvailable.toStringAsFixed(0)}',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: Colors.black54,
+                          'Stock: ${product.stock}',
+                          style: TextStyle(
+                            fontSize: 12,
                             fontWeight: FontWeight.bold,
+                            color: product.stock <= 0
+                                ? Colors.red.shade700
+                                : Colors.grey.shade800,
                           ),
                         ),
                       ],
@@ -108,24 +129,24 @@ class ProductCard extends StatelessWidget {
                 ),
               ),
             ),
-
             Padding(
-              padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
               child: ElevatedButton(
-                onPressed: () {
-                  cart.addItem(product, quantity: 1);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('${product.name} agregado al carrito.'),
-                      duration: const Duration(seconds: 1),
-                    ),
-                  );
-                },
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 4),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
-                child: const Text('Agregar'),
+                onPressed: () {
+                  cart.addItem(product, quantity: 1);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                          '${product.name} ${product.stock <= 0 ? "agregado a informe de demanda" : "agregado al carrito."}'),
+                      duration: const Duration(seconds: 1),
+                    ),
+                  );
+                },
+                child: Text(product.stock > 0 ? 'Agregar' : 'Solicitar'),
               ),
             ),
           ],

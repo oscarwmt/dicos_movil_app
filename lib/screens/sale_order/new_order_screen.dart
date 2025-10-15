@@ -2,202 +2,177 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 import '../../api/odoo_api_client.dart';
+import '../../models/cart_item_model.dart';
 import '../../models/customer_model.dart';
 import '../../providers/cart_provider.dart';
-import 'customer_selector_screen.dart';
 
-class NewOrderScreen extends StatefulWidget {
-  const NewOrderScreen({super.key});
+class NewOrderScreen extends StatelessWidget {
+  final bool isQuotation;
+  final Customer customer;
+  final int shippingAddressId; // <--- Nuevo campo
 
-  @override
-  State<NewOrderScreen> createState() => _NewOrderScreenState();
-}
+  const NewOrderScreen({
+    super.key,
+    required this.isQuotation,
+    required this.customer,
+    required this.shippingAddressId, // <--- Requerido
+  });
 
-class _NewOrderScreenState extends State<NewOrderScreen> {
-  final OdooApiClient _apiClient = OdooApiClient();
-  Customer _selectedCustomer = Customer.defaultCustomer;
-  final String _orderDate = DateTime.now().toIso8601String().substring(0, 10);
-
-  // Navegar al selector de clientes
-  Future<void> _selectCustomer() async {
-    final selected = await Navigator.of(context).push(
-      MaterialPageRoute(builder: (ctx) => const CustomerSelectorScreen()),
-    );
-
-    if (selected != null && selected is Customer) {
-      setState(() {
-        _selectedCustomer = selected;
-      });
-    }
-  }
-
-  // Finalizar y crear la Orden de Venta
-  Future<void> _finalizeOrder(CartProvider cart) async {
-    if (_selectedCustomer.id == 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Debe seleccionar un cliente antes de finalizar.')),
-      );
+  Future<void> _handleSaveOrder(BuildContext context, CartProvider cart) async {
+    if (cart.totalUniqueItems == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('El carrito está vacío.'),
+          backgroundColor: Colors.orange));
       return;
     }
 
-    if (cart.itemCount == 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('El carrito está vacío.')),
-      );
-      return;
-    }
-
-    // Guardar referencias al context antes del 'await'
-    final messenger = ScaffoldMessenger.of(context);
-    final navigator = Navigator.of(context);
+    final OdooApiClient apiClient = OdooApiClient();
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
 
     try {
-      messenger.showSnackBar(
-        SnackBar(
-            content: Text('Creando pedido para ${_selectedCustomer.name}...'),
-            duration: const Duration(seconds: 3)),
+      // Mostrar indicador de carga
+      showDialog(
+        context: context,
+        builder: (ctx) => const Center(child: CircularProgressIndicator()),
+        barrierDismissible: false,
       );
 
-      final int orderId = await _apiClient.createSaleOrder(cart.items,
-          customerPartnerId: _selectedCustomer.id);
+      // LLAMADA CLAVE: Crear el pedido con la dirección y la condición de cotización
+      final int orderId = await apiClient.createSaleOrder(
+        cart.items,
+        customerPartnerId: customer.id,
+        shippingAddressId: shippingAddressId, // Enviando ID de dirección
+        isQuotation: isQuotation, // Enviando la condición
+      );
 
+      // Reportar productos sin stock si aplica
+      final outOfStockItems =
+          cart.items.where((item) => item.product.stock <= 0).toList();
+      if (outOfStockItems.isNotEmpty) {
+        await apiClient.reportOutOfStockDemand(outOfStockItems, customer.id);
+      }
+
+      // Limpiar el carrito y cerrar el modal
       cart.clear();
+      Navigator.of(context).pop(); // Cerrar el indicador de carga
+      Navigator.of(context)
+          .popUntil((route) => route.isFirst); // Volver al inicio
 
-      navigator.pop();
-
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text('¡Pedido Venta #$orderId creado con éxito!'),
-          backgroundColor: Colors.green,
-          duration: const Duration(seconds: 5),
-        ),
-      );
+      // Mostrar mensaje de éxito
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+            '¡${isQuotation ? "Cotización" : "Pedido"} $orderId creado y ${isQuotation ? "pendiente de aprobación" : "CONFIRMADO"}!'),
+        backgroundColor: Colors.green,
+        duration: const Duration(seconds: 4),
+      ));
     } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text('Fallo: ${e.toString().replaceAll('Exception: ', '')}'),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 8),
-        ),
-      );
+      Navigator.of(context).pop(); // Cerrar el indicador de carga
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Error al grabar el pedido: $e'),
+        backgroundColor: Colors.red,
+        duration: const Duration(seconds: 5),
+      ));
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final cart = Provider.of<CartProvider>(context);
+    final totalAmount = cart.totalAmount;
+    final priceFormatter =
+        NumberFormat.currency(locale: 'es_CL', symbol: '\$', decimalDigits: 0);
+    final buttonText = isQuotation ? 'Crear Cotización' : 'Confirmar Pedido';
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Nuevo Pedido DICOS'),
-        centerTitle: true,
+        title: Text('${isQuotation ? "Revisar Cotización" : "Revisar Pedido"}'),
       ),
       body: Column(
         children: [
-          // 1. Cabecera y Selector de Cliente
-          Padding(
-            padding: const EdgeInsets.all(16.0),
+          // Sección de Encabezado (Cliente y Dirección)
+          Container(
+            padding: const EdgeInsets.all(16),
+            width: double.infinity,
+            color: Colors.blueGrey[50],
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // CORRECCIÓN: Se quitó 'const' porque usa una variable (_apiClient.userName).
-                Text('Vendedor: ${_apiClient.userName}',
-                    style: const TextStyle(fontSize: 16, color: Colors.grey)),
-                Text('Fecha: $_orderDate',
-                    style: const TextStyle(fontSize: 16, color: Colors.grey)),
-                const SizedBox(height: 12),
-
-                // Selector de Cliente (Botón)
-                ElevatedButton.icon(
-                  onPressed: _selectCustomer,
-                  icon: Icon(
-                      _selectedCustomer.id == 0
-                          ? Icons.person_add_alt
-                          : Icons.person,
-                      size: 24),
-                  label: Text(_selectedCustomer.name,
-                      style: const TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.bold)),
-                  style: ElevatedButton.styleFrom(
-                    minimumSize: const Size(double.infinity, 50),
-                    backgroundColor: _selectedCustomer.id == 0
-                        ? Colors.red[50]
-                        : Colors.green[50],
-                    foregroundColor: _selectedCustomer.id == 0
-                        ? Colors.red
-                        : Colors.green[900],
-                    elevation: 1,
-                  ),
+                Text(
+                  'Cliente: ${customer.name}',
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.bold),
                 ),
-                const SizedBox(height: 12),
+                Text(
+                  'Dirección ID: $shippingAddressId', // Mostrar el ID de la dirección
+                  style: const TextStyle(fontSize: 14, color: Colors.grey),
+                ),
+                // Aquí podrías hacer otra llamada a la API para obtener el nombre de la calle si lo necesitas
               ],
             ),
           ),
 
-          // 2. Sección del Carrito (Lista de Productos)
           Expanded(
-            child: cart.itemCount == 0
-                ? const Center(child: Text('Añade productos para este pedido.'))
-                : ListView.builder(
-                    itemCount: cart.itemCount,
-                    itemBuilder: (ctx, i) {
-                      final item = cart.items[i];
-                      return Card(
-                          child: ListTile(
-                              title: Text(
-                                  '${item.quantity}x ${item.product.name}'),
-                              subtitle: Text(
-                                  '\$${item.product.price.toStringAsFixed(2)}')));
-                    },
-                  ),
+            child: ListView.builder(
+              itemCount: cart.items.length,
+              itemBuilder: (ctx, i) {
+                final CartItem item = cart.items[i];
+                // Aquí va tu widget de ítem de carrito
+                return ListTile(
+                  title: Text(item.product.name),
+                  subtitle: Text(
+                      '${priceFormatter.format(item.product.price)} x ${item.quantity}'),
+                  trailing: Text(priceFormatter
+                      .format(item.product.price * item.quantity)),
+                );
+              },
+            ),
           ),
-
-          // 3. Resumen y Botón de Creación
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: Colors.white,
-              border: Border(top: BorderSide(color: Colors.grey[300]!)),
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.grey.withOpacity(0.2),
+                    spreadRadius: 2,
+                    blurRadius: 5)
+              ],
             ),
-            child: Column(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Total Neto:',
-                        style: TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.bold)),
-                    Text('\$${cart.totalAmount.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.deepPurple)),
-                  ],
+                const Text(
+                  'Total Estimado:',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: cart.itemCount > 0 && _selectedCustomer.id != 0
-                        ? () => _finalizeOrder(cart)
-                        : null,
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 15),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                      backgroundColor: Colors.deepPurple,
-                      foregroundColor: Colors.white,
-                    ),
-                    child: const Text('CREAR ORDEN DE VENTA',
-                        style: TextStyle(fontSize: 18)),
-                  ),
+                Text(
+                  priceFormatter.format(totalAmount),
+                  style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green),
                 ),
               ],
             ),
           ),
         ],
+      ),
+      bottomNavigationBar: Container(
+        padding: const EdgeInsets.all(10),
+        child: ElevatedButton.icon(
+          onPressed: () => _handleSaveOrder(context, cart),
+          icon: Icon(isQuotation ? Icons.drafts : Icons.check_circle_outline),
+          label: Text(buttonText),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: isQuotation ? Colors.orange : Colors.green,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 15),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+        ),
       ),
     );
   }

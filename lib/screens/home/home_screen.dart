@@ -1,14 +1,14 @@
 // lib/screens/home/home_screen.dart
 
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../api/odoo_api_client.dart';
-import '../../models/product_model.dart';
 import '../../models/customer_model.dart';
+import '../../models/product_model.dart';
 import '../../providers/cart_provider.dart';
-import '../../screens/sale_order/new_order_screen.dart';
 import '../../widgets/product_card.dart';
+import '../sale_order/new_order_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final OdooApiClient apiClient;
@@ -26,107 +26,76 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final ScrollController _scrollController = ScrollController();
-  final List<Product> _products = [];
+  final TextEditingController _searchController = TextEditingController();
+  Timer? _debounce;
 
-  List<Map<String, dynamic>> _mainCategories = [];
+  late Future<List<Map<String, dynamic>>> _categoriesFuture;
+  List<Product> _products = [];
+  List<Map<String, dynamic>>? _categories;
   List<Map<String, dynamic>> _subCategories = [];
-
-  late Future<List<Map<String, dynamic>>> _addressesFuture;
-  int? _selectedAddressId;
-
-  // ✅ CORRECCIÓN 1: La variable ahora es nulable para evitar el error 'late'.
-  Future<Map<String, dynamic>>? _financialsFuture;
 
   bool _isLoading = true;
   bool _isLoadingMore = false;
-  bool _hasMore = true;
-  int _offset = 0;
-  final int _limit = 40;
-
-  int? _selectedMainCategoryId;
-  String? _selectedMainCategoryName;
+  int? _selectedCategoryId;
   int? _selectedSubCategoryId;
 
   @override
   void initState() {
     super.initState();
-    _addressesFuture =
-        widget.apiClient.fetchCustomerAddresses(widget.customer.id);
-    _financialsFuture =
-        widget.apiClient.fetchPartnerFinancials(widget.customer.id);
-    _initializeData();
+    _categoriesFuture = widget.apiClient.fetchCategories();
+    _fetchAndSetProducts();
     _scrollController.addListener(_onScroll);
-  }
-
-  @override
-  void dispose() {
-    _scrollController.removeListener(_onScroll);
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _initializeData() async {
-    await _fetchMainCategories();
-    await _loadProducts(isRefresh: true);
-  }
-
-  Future<void> _fetchMainCategories() async {
-    try {
-      final fetchedCategories = await widget.apiClient.fetchCategories();
-      if (mounted) setState(() => _mainCategories = fetchedCategories);
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text("Error al cargar categorías: ${e.toString()}")));
-    }
+    _searchController.addListener(_onSearchChanged);
   }
 
   Future<void> _fetchSubCategories(int parentId) async {
     try {
-      final fetchedSubCategories =
-          await widget.apiClient.fetchSubCategories(parentId);
-      if (mounted) setState(() => _subCategories = fetchedSubCategories);
+      final subCats = await widget.apiClient.fetchSubCategories(parentId);
+      if (mounted) {
+        setState(() {
+          _subCategories = subCats;
+        });
+      }
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text("Error al cargar subcategorías: ${e.toString()}")));
+      // Manejar error si es necesario
     }
   }
 
-  Future<void> _loadProducts({bool isRefresh = false}) async {
-    if (isRefresh) {
+  Future<void> _fetchAndSetProducts({bool loadMore = false}) async {
+    if (loadMore && _isLoadingMore) return;
+
+    if (loadMore) {
+      setState(() {
+        _isLoadingMore = true;
+      });
+    } else {
       setState(() {
         _isLoading = true;
-        _products.clear();
-        _offset = 0;
-        _hasMore = true;
       });
     }
 
-    if (_isLoadingMore) return;
-
-    setState(() => _isLoadingMore = true);
-
     try {
-      final int? categoryToFilter =
-          _selectedSubCategoryId ?? _selectedMainCategoryId;
-
+      final domain = _buildDomain();
       final newProducts = await widget.apiClient.fetchProducts(
-        limit: _limit,
-        offset: _offset,
-        categoryId: categoryToFilter,
+        offset: loadMore ? _products.length : 0,
+        domain: domain,
       );
 
       if (mounted) {
         setState(() {
-          if (newProducts.length < _limit) _hasMore = false;
-          _products.addAll(newProducts);
-          _offset = _products.length;
-          _isLoading = false;
-          _isLoadingMore = false;
+          if (loadMore) {
+            _products.addAll(newProducts);
+          } else {
+            _products = newProducts;
+          }
         });
       }
     } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
+      }
+    } finally {
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -136,259 +105,46 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  List<dynamic> _buildDomain() {
+    final domain = [];
+    final query = _searchController.text;
+    if (query.isNotEmpty) {
+      domain.add(['name', 'ilike', query]);
+    }
+    final categoryId = _selectedSubCategoryId ?? _selectedCategoryId;
+    if (categoryId != null) {
+      domain.add(['categ_id', 'child_of', categoryId]);
+    }
+    return domain;
+  }
+
   void _onScroll() {
     if (_scrollController.position.pixels >=
-            _scrollController.position.maxScrollExtent - 200 &&
-        _hasMore &&
-        !_isLoadingMore) {
-      _loadProducts();
+        _scrollController.position.maxScrollExtent - 300) {
+      _fetchAndSetProducts(loadMore: true);
     }
   }
 
-  Widget _buildOrderHeader() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      color: Colors.grey[100],
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                  child: Text(widget.customer.name,
-                      style: const TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.bold),
-                      overflow: TextOverflow.ellipsis)),
-              TextButton(
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                  },
-                  child: const Text('Cambiar Cliente')),
-            ],
-          ),
-          const Divider(height: 16),
-          FutureBuilder<List<Map<String, dynamic>>>(
-            future: _addressesFuture,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const LinearProgressIndicator();
-              }
-              if (snapshot.hasError) {
-                return Text('Error al cargar direcciones: ${snapshot.error}',
-                    style: const TextStyle(color: Colors.red));
-              }
-              final addresses = snapshot.data ?? [];
-              if (addresses.isEmpty) {
-                return const Text('Cliente sin direcciones de entrega.');
-              }
-              return DropdownButtonFormField<int>(
-                initialValue: _selectedAddressId,
-                hint: const Text('Seleccione dirección de entrega...'),
-                isExpanded: true,
-                items: addresses.map((addr) {
-                  return DropdownMenuItem(
-                      value: addr['id'] as int,
-                      child: Text('${addr['name']} (${addr['street'] ?? ''})',
-                          overflow: TextOverflow.ellipsis));
-                }).toList(),
-                onChanged: (value) {
-                  setState(() {
-                    _selectedAddressId = value;
-                  });
-                },
-              );
-            },
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Icon(Icons.payment, color: Colors.grey.shade700, size: 20),
-              const SizedBox(width: 8),
-              const Text(
-                'Plazo de Pago: ',
-                style: TextStyle(fontSize: 14, color: Colors.black54),
-              ),
-              Expanded(
-                child: Text(
-                  widget.customer.paymentTerm,
-                  style: const TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.bold),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-
-          // ✅ CORRECCIÓN 2: El FutureBuilder ahora maneja correctamente el caso nulo.
-          FutureBuilder<Map<String, dynamic>>(
-            future: _financialsFuture,
-            builder: (context, snapshot) {
-              // Si el future es nulo, es un error de inicialización
-              if (_financialsFuture == null) {
-                return const Text('Error al iniciar la carga de saldo.',
-                    style: TextStyle(color: Colors.red, fontSize: 12));
-              }
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Row(
-                  children: [
-                    SizedBox(
-                        height: 16,
-                        width: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2)),
-                    SizedBox(width: 8),
-                    Text('Cargando saldo...',
-                        style: TextStyle(color: Colors.grey, fontSize: 12)),
-                  ],
-                );
-              }
-              if (snapshot.hasError) {
-                return const Text('No se pudo cargar el saldo.',
-                    style: TextStyle(color: Colors.red, fontSize: 12));
-              }
-
-              final financials = snapshot.data!;
-              final credit = (financials['credit'] ?? 0.0).toDouble();
-              final debit = (financials['debit'] ?? 0.0).toDouble();
-              final balance = credit - debit;
-
-              final currencyFormat = NumberFormat.currency(
-                  locale: 'es_CL', symbol: '\$', decimalDigits: 0);
-              final balanceText = currencyFormat.format(balance.abs());
-
-              final Color balanceColor =
-                  balance < 0 ? Colors.red.shade700 : Colors.green.shade800;
-              final String balanceLabel =
-                  balance < 0 ? 'Deuda Pendiente:' : 'Saldo a Favor:';
-
-              return Row(
-                children: [
-                  Icon(Icons.monetization_on_outlined,
-                      color: balanceColor, size: 20),
-                  const SizedBox(width: 8),
-                  Text(balanceLabel,
-                      style:
-                          const TextStyle(fontSize: 14, color: Colors.black54)),
-                  Expanded(
-                    child: Text(
-                      ' $balanceText',
-                      style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: balanceColor),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-        ],
-      ),
-    );
+  void _onSearchChanged() {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 500), () {
+      _fetchAndSetProducts();
+    });
   }
 
-  Widget _buildMainCategoryFilter() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-      color: Colors.white,
-      child: DropdownButton<int?>(
-        value: _selectedMainCategoryId,
-        isExpanded: true,
-        hint: const Text('Todas las Categorías',
-            style: TextStyle(fontWeight: FontWeight.bold)),
-        items: [
-          const DropdownMenuItem<int?>(
-              value: null, child: Text('Todas las Categorías')),
-          ..._mainCategories.map((category) {
-            return DropdownMenuItem<int?>(
-              value: category['id'] as int?,
-              child: Text(category['name'].toString()),
-            );
-          }).toList(),
-        ],
-        onChanged: (newValue) {
-          setState(() {
-            _selectedMainCategoryId = newValue;
-            _selectedSubCategoryId = null;
-            _subCategories.clear();
-
-            if (newValue == null) {
-              _selectedMainCategoryName = null;
-            } else {
-              final selected =
-                  _mainCategories.firstWhere((cat) => cat['id'] == newValue);
-              _selectedMainCategoryName = selected['name'].toString();
-              _fetchSubCategories(newValue);
-            }
-            _loadProducts(isRefresh: true);
-          });
-        },
-      ),
-    );
-  }
-
-  Widget _buildSubCategoryChips() {
-    if (_selectedMainCategoryId == null || _subCategories.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8),
-      color: Colors.grey[100],
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            ActionChip(
-              label: Text('Todos ($_selectedMainCategoryName)'),
-              backgroundColor: _selectedSubCategoryId == null
-                  ? Theme.of(context).primaryColor
-                  : Colors.white,
-              labelStyle: TextStyle(
-                  color: _selectedSubCategoryId == null
-                      ? Colors.white
-                      : Colors.black),
-              onPressed: () {
-                setState(() {
-                  _selectedSubCategoryId = null;
-                  _loadProducts(isRefresh: true);
-                });
-              },
-            ),
-            const SizedBox(width: 8),
-            ..._subCategories.map((subCat) {
-              final bool isSelected = _selectedSubCategoryId == subCat['id'];
-              return Padding(
-                padding: const EdgeInsets.only(right: 8.0),
-                child: ActionChip(
-                  label: Text(subCat['name']),
-                  backgroundColor: isSelected
-                      ? Theme.of(context).primaryColor
-                      : Colors.white,
-                  labelStyle: TextStyle(
-                      color: isSelected ? Colors.white : Colors.black),
-                  onPressed: () {
-                    setState(() {
-                      _selectedSubCategoryId = subCat['id'];
-                      _loadProducts(isRefresh: true);
-                    });
-                  },
-                ),
-              );
-            }).toList(),
-          ],
-        ),
-      ),
-    );
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _scrollController.dispose();
+    _debounce?.cancel();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Crear Pedido'),
+        title: Text('Pedido para: ${widget.customer.name}'),
         actions: [
           Consumer<CartProvider>(
             builder: (ctx, cart, child) => Stack(
@@ -397,7 +153,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 IconButton(
                   icon: const Icon(Icons.shopping_cart_checkout),
                   onPressed: () {
-                    if (cart.itemCount > 0) {
+                    if (cart.totalUniqueItems > 0) {
                       Navigator.of(context).push(
                         MaterialPageRoute(
                             builder: (ctx) => const NewOrderScreen()),
@@ -408,7 +164,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     }
                   },
                 ),
-                if (cart.itemCount > 0)
+                if (cart.totalUniqueItems > 0)
                   Positioned(
                     right: 8,
                     top: 8,
@@ -418,10 +174,12 @@ class _HomeScreenState extends State<HomeScreen> {
                         color: Colors.red,
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      constraints:
-                          const BoxConstraints(minWidth: 16, minHeight: 16),
+                      constraints: const BoxConstraints(
+                        minWidth: 16,
+                        minHeight: 16,
+                      ),
                       child: Text(
-                        cart.itemCount.toString(),
+                        cart.totalUniqueItems.toString(),
                         style:
                             const TextStyle(color: Colors.white, fontSize: 10),
                         textAlign: TextAlign.center,
@@ -435,10 +193,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: Column(
         children: [
-          _buildOrderHeader(),
-          const Divider(height: 1, color: Colors.grey),
-          _buildMainCategoryFilter(),
-          _buildSubCategoryChips(),
+          _buildFilters(),
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
@@ -454,11 +209,13 @@ class _HomeScreenState extends State<HomeScreen> {
                           crossAxisSpacing: 10,
                           mainAxisSpacing: 10,
                         ),
-                        itemCount: _products.length + (_hasMore ? 1 : 0),
+                        itemCount: _products.length + (_isLoadingMore ? 1 : 0),
                         itemBuilder: (ctx, i) {
-                          if (i >= _products.length) {
+                          if (i == _products.length) {
                             return const Center(
-                                child: CircularProgressIndicator());
+                                child: Padding(
+                                    padding: EdgeInsets.all(16.0),
+                                    child: CircularProgressIndicator()));
                           }
                           return ProductCard(product: _products[i]);
                         },
@@ -466,14 +223,92 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (ctx) => const NewOrderScreen()),
-          );
-        },
-        label: const Text('Ver Carrito'),
-        icon: const Icon(Icons.shopping_cart),
+    );
+  }
+
+  Widget _buildFilters() {
+    return Padding(
+      padding: const EdgeInsets.all(8.0),
+      child: Column(
+        children: [
+          TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              labelText: 'Buscar producto...',
+              prefixIcon: const Icon(Icons.search),
+              border:
+                  OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: FutureBuilder<List<Map<String, dynamic>>>(
+                  future: _categoriesFuture,
+                  builder: (context, snapshot) {
+                    if (!snapshot.hasData) {
+                      return const SizedBox.shrink();
+                    }
+                    _categories = snapshot.data!;
+                    return DropdownButtonFormField<int>(
+                      initialValue: _selectedCategoryId,
+                      hint: const Text('Categoría'),
+                      decoration: InputDecoration(
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8))),
+                      isExpanded: true,
+                      items: [
+                        const DropdownMenuItem<int>(
+                            value: null, child: Text('Todas')),
+                        ..._categories!.map((cat) => DropdownMenuItem(
+                            value: cat['id'] as int,
+                            child: Text(cat['name'],
+                                overflow: TextOverflow.ellipsis))),
+                      ],
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedCategoryId = value;
+                          _selectedSubCategoryId = null;
+                          _subCategories = [];
+                          if (value != null) {
+                            _fetchSubCategories(value);
+                          }
+                        });
+                        _fetchAndSetProducts();
+                      },
+                    );
+                  },
+                ),
+              ),
+              if (_subCategories.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                Expanded(
+                  child: DropdownButtonFormField<int>(
+                    initialValue: _selectedSubCategoryId,
+                    hint: const Text('Subcategoría'),
+                    decoration: InputDecoration(
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8))),
+                    isExpanded: true,
+                    items: _subCategories
+                        .map((cat) => DropdownMenuItem(
+                            value: cat['id'] as int,
+                            child: Text(cat['name'],
+                                overflow: TextOverflow.ellipsis)))
+                        .toList(),
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedSubCategoryId = value;
+                      });
+                      _fetchAndSetProducts();
+                    },
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
       ),
     );
   }
