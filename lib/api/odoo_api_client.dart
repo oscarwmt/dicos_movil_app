@@ -14,8 +14,14 @@ class OdooApiClient {
   factory OdooApiClient() => _instance;
   OdooApiClient._internal();
 
-  final String _baseUrl = "https://pruebas-aplicacion.odoo.com";
-  final String _dbName = "pruebas-aplicacion";
+  // final String _baseUrl = "https://pruebas-aplicacion.odoo.com";
+  // final String _dbName = "pruebas-aplicacion";
+  
+  import '../config/app_config.dart';
+  
+  final String _baseUrl = AppConfig.baseUrl;
+  final String _dbName = AppConfig.dbName;
+
   int? _userId;
   String? _sessionId;
   String _currentPassword = "";
