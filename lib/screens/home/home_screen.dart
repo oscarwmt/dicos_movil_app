@@ -1,16 +1,14 @@
 // lib/screens/home/home_screen.dart
 
 import 'dart:async';
-import 'package:flutter/material.dart'; // Contiene debugPrint
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../api/odoo_api_client.dart';
 import '../../models/customer_model.dart';
 import '../../models/product_model.dart';
 import '../../providers/cart_provider.dart';
-import '../../widgets/product_card.dart';
-// ⚠️ Importar CreateOrderScreen (ya que es la pantalla de destino con los argumentos)
+import '../../widgets/product_card.dart'; // Mantener el ProductCard de Venta
 import '../sale_order/create_order_screen.dart';
-// import '../sale_order/new_order_screen.dart'; // No se usa directamente aquí
 
 class HomeScreen extends StatefulWidget {
   final OdooApiClient apiClient;
@@ -31,10 +29,10 @@ class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _searchController = TextEditingController();
   Timer? _debounce;
 
-  // Propiedades de estado existentes
   late Future<List<Map<String, dynamic>>> _categoriesFuture;
   List<Product> _products = [];
-  List<Map<String, dynamic>>? _categories;
+  // ✅ Variables de catálogo y subcategoría eliminadas/simplificadas
+  List<Map<String, dynamic>> _categories = [];
   List<Map<String, dynamic>> _subCategories = [];
 
   bool _isLoading = true;
@@ -51,7 +49,6 @@ class _HomeScreenState extends State<HomeScreen> {
     _searchController.addListener(_onSearchChanged);
   }
 
-  // Métodos de lógica del Home Screen
   Future<void> _fetchSubCategories(int parentId) async {
     try {
       final subCats = await widget.apiClient.fetchSubCategories(parentId);
@@ -61,10 +58,7 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
     } catch (e) {
-      if (mounted) {
-        // ✅ CORRECCIÓN CLAVE: Reemplazar print() con debugPrint()
-        debugPrint('Error fetching subcategories: $e');
-      }
+      debugPrint('Error fetching subcategories: $e');
     }
   }
 
@@ -161,7 +155,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   icon: const Icon(Icons.shopping_cart_checkout),
                   onPressed: () {
                     if (cart.totalUniqueItems > 0) {
-                      // Corrección de Navegación (Línea 159)
                       Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (ctx) => CreateOrderScreen(
@@ -229,6 +222,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     padding: EdgeInsets.all(16.0),
                                     child: CircularProgressIndicator()));
                           }
+                          // ✅ Llamada correcta a ProductCard
                           return ProductCard(product: _products[i]);
                         },
                       ),
@@ -262,6 +256,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     if (!snapshot.hasData) {
                       return const SizedBox.shrink();
                     }
+                    // ✅ Asignación limpia. categories es List<Map<...>>
                     _categories = snapshot.data!;
                     return DropdownButtonFormField<int>(
                       initialValue: _selectedCategoryId,
@@ -273,7 +268,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       items: [
                         const DropdownMenuItem<int>(
                             value: null, child: Text('Todas')),
-                        ..._categories!.map((cat) => DropdownMenuItem(
+                        ..._categories.map((cat) => DropdownMenuItem(
                             value: cat['id'] as int,
                             child: Text(cat['name'],
                                 overflow: TextOverflow.ellipsis))),

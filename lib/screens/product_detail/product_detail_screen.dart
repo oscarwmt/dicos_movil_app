@@ -17,12 +17,9 @@ class ProductDetailScreen extends StatelessWidget {
     final priceFormatter =
         NumberFormat.currency(locale: 'es_CL', symbol: '\$', decimalDigits: 0);
 
-    // Asignación segura de valores para evitar errores de nulidad
-    final String safeCategory = product.category ?? 'SIN CATEGORÍA';
-    final String safeSalesUnit =
-        product.salesUnit ?? 'Unidad'; // Soluciona error en línea ~67
-    final String safeDescription =
-        product.description ?? ''; // Soluciona error en líneas ~92-94
+    // Fallback de texto
+    final safeCategory = product.categoryName ?? 'Sin categoría';
+    final safeSalesUnit = product.salesUnit ?? 'Unidad';
 
     return Scaffold(
       appBar: AppBar(
@@ -52,7 +49,6 @@ class ProductDetailScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    // ✅ CORRECCIÓN 1: Se usa safeCategory para evitar el error de toUpperCase()
                     safeCategory.toUpperCase(),
                     style: TextStyle(
                       color: Theme.of(context).primaryColor,
@@ -67,29 +63,59 @@ class ProductDetailScreen extends StatelessWidget {
                         fontSize: 24, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 12),
+
+                  // ✅ CORRECCIÓN CLAVE: Precio a la izquierda, Unidad y Cantidad a la derecha
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Icon(Icons.inventory_2_outlined,
-                          color: Colors.grey.shade700, size: 18),
-                      const SizedBox(width: 8),
-                      // ✅ CORRECCIÓN 2: Se usa safeSalesUnit para evitar error de nulidad
-                      Text('Unidades por $safeSalesUnit:',
-                          style: const TextStyle(fontSize: 16)),
-                      const SizedBox(width: 8),
-                      Text('${product.unitsPerPackage}',
-                          style: const TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.bold)),
+                      // PRECIO (Izquierda, Fuente Grande)
+                      Text(
+                        '${priceFormatter.format(product.price)} + IVA',
+                        style: const TextStyle(
+                            fontSize: 24,
+                            color: Colors.green,
+                            fontWeight: FontWeight.w500),
+                      ),
+
+                      // UNIDAD DE VENTA Y CANTIDAD (Derecha, Compacto)
+                      Row(
+                        children: [
+                          Icon(Icons.inventory_2_outlined,
+                              color: Colors.grey.shade700, size: 16),
+                          const SizedBox(width: 6),
+                          Text('${product.unitsPerPackage}',
+                              style: const TextStyle(
+                                  fontSize: 14, fontWeight: FontWeight.bold)),
+                          Text(
+                            ' por $safeSalesUnit',
+                            style: const TextStyle(
+                                fontSize: 14, color: Colors.black87),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
-                  const SizedBox(height: 12),
-                  Text(
-                    '${priceFormatter.format(product.price)} + IVA',
-                    style: const TextStyle(
-                        fontSize: 28,
-                        color: Colors.green,
-                        fontWeight: FontWeight.w500),
+                  // FIN DE LA CORRECCIÓN CLAVE
+
+                  const SizedBox(height: 20),
+
+                  // Información de Stock
+                  Row(
+                    children: [
+                      Text(
+                        'Stock disponible: ${product.stock.toInt()}',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: product.stock <= 0
+                              ? Colors.red
+                              : Colors.green.shade700,
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 20),
+
                   const Divider(),
                   const SizedBox(height: 12),
                   const Text(
@@ -98,10 +124,9 @@ class ProductDetailScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    // ✅ CORRECCIÓN 3: Se usa safeDescription, que ya está garantizada como String no nula
-                    safeDescription.isEmpty
+                    (product.description ?? '').isEmpty
                         ? 'Este producto no tiene descripción.'
-                        : safeDescription,
+                        : product.description!,
                     style: const TextStyle(fontSize: 16, height: 1.5),
                   ),
                 ],
@@ -120,8 +145,6 @@ class ProductDetailScreen extends StatelessWidget {
               action: SnackBarAction(
                 label: 'DESHACER',
                 onPressed: () {
-                  //cart.removeSingleItem(product.id,
-                  //    isInStock: product.stock > 0);
                   cart.removeSingleItem(product.id);
                 },
               ),

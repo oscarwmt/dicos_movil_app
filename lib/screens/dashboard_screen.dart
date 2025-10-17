@@ -1,7 +1,10 @@
 // lib/screens/dashboard_screen.dart
 
 import 'package:flutter/material.dart';
+import '../api/odoo_api_client.dart';
 import 'sale_order/customer_selector_screen.dart';
+import 'sale_order/sale_order_list_screen.dart';
+import 'catalog/catalog_screen.dart'; // ⬅️ NUEVO IMPORT
 
 class DashboardScreen extends StatelessWidget {
   final Map<String, dynamic> userData;
@@ -126,6 +129,9 @@ class DashboardScreen extends StatelessWidget {
       );
     }
 
+    // Instanciamos el cliente API (asumimos que OdooApiClient es un Singleton)
+    final OdooApiClient apiClient = OdooApiClient();
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Panel de Vendedor'),
@@ -160,7 +166,15 @@ class DashboardScreen extends StatelessWidget {
                     context: context,
                     icon: Icons.receipt_long,
                     label: 'Mis Ventas',
-                    onTap: showComingSoonMessage,
+                    // CONEXIÓN CLAVE: Navega a la lista de órdenes de venta
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (ctx) =>
+                              SaleOrderListScreen(apiClient: apiClient),
+                        ),
+                      );
+                    },
                   ),
                   _buildMenuOption(
                     context: context,
@@ -172,10 +186,11 @@ class DashboardScreen extends StatelessWidget {
                     context: context,
                     icon: Icons.inventory_2_outlined,
                     label: 'Catálogo',
+                    // ✅ CORRECCIÓN: Navega a la nueva pantalla de catálogo (solo lectura)
                     onTap: () {
                       Navigator.of(context).push(
                         MaterialPageRoute(
-                          builder: (ctx) => const CustomerSelectorScreen(),
+                          builder: (ctx) => CatalogScreen(apiClient: apiClient),
                         ),
                       );
                     },

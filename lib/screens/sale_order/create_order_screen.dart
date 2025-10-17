@@ -33,17 +33,17 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   late Future<List<Map<String, dynamic>>> _addressesFuture;
   late Future<List<Map<String, dynamic>>> _categoriesFuture;
   List<Product> _products = [];
+  List<Map<String, dynamic>> _subCategories = [];
   List<Map<String, dynamic>>? _categories;
 
   bool _isLoading = true;
   bool _isLoadingMore = false;
   int? _selectedAddressId;
-
-  // ✅ NUEVOS CAMPOS DE ESTADO PARA LOS DATOS REQUERIDOS EN NewOrderScreen
   String _selectedAddressName = '';
   String _selectedAddressStreet = '';
 
   int? _selectedCategoryId;
+  int? _selectedSubCategoryId;
 
   @override
   void initState() {
@@ -56,18 +56,29 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     _searchController.addListener(_onSearchChanged);
   }
 
+  Future<void> _fetchSubCategories(int parentId) async {
+    try {
+      final subCats = await _apiClient.fetchSubCategories(parentId);
+      if (mounted) {
+        setState(() {
+          _subCategories = subCats;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error fetching subcategories: $e');
+    }
+  }
+
   Future<void> _fetchAndSetProducts({bool loadMore = false}) async {
     if (loadMore && _isLoadingMore) return;
 
-    if (loadMore) {
-      setState(() {
+    setState(() {
+      if (loadMore) {
         _isLoadingMore = true;
-      });
-    } else {
-      setState(() {
+      } else {
         _isLoading = true;
-      });
-    }
+      }
+    });
 
     try {
       final domain = _buildDomain();
@@ -106,8 +117,9 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     if (query.isNotEmpty) {
       domain.add(['name', 'ilike', query]);
     }
-    if (_selectedCategoryId != null) {
-      domain.add(['categ_id', 'child_of', _selectedCategoryId]);
+    final categoryId = _selectedSubCategoryId ?? _selectedCategoryId;
+    if (categoryId != null) {
+      domain.add(['categ_id', 'child_of', categoryId]);
     }
     return domain;
   }
@@ -191,12 +203,11 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                   IconButton(
                     icon: const Icon(Icons.shopping_cart),
                     onPressed: () {
-                      // 🚨 VALIDACIÓN DE DIRECCIÓN
                       if (_selectedAddressId == null ||
                           _selectedAddressId == 0) {
                         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                             content: Text(
-                                'Debe seleccionar o asignar una dirección de entrega.'),
+                                'Debe seleccionar una dirección de entrega.'),
                             backgroundColor: Colors.orange));
                         return;
                       }
@@ -206,7 +217,6 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                           isQuotation: widget.isQuotation,
                           customer: widget.customer,
                           shippingAddressId: _selectedAddressId!,
-                          // ✅ CORRECCIÓN CLAVE: Pasamos los nuevos argumentos requeridos
                           shippingAddressName: _selectedAddressName,
                           shippingAddressStreet: _selectedAddressStreet,
                         ),
@@ -282,22 +292,20 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
               final addresses = snapshot.data ?? [];
               final int mainPartnerId = widget.customer.id;
 
-              // 🚨 FUNCIÓN PARA ENCONTRAR UN ADDRESS EN LA LISTA
               Map<String, dynamic> findAddress(int? id) {
-                return addresses.firstWhere((addr) => addr['id'] == id,
+                final result = addresses.firstWhere((addr) => addr['id'] == id,
                     orElse: () => {
                           'id': mainPartnerId,
                           'name': widget.customer.name,
-                          'street': 'Dirección Principal (ID: $mainPartnerId)',
+                          'street': 'Dirección Principal',
                         });
+                return result;
               }
 
-              // ✅ LÓGICA DE ASIGNACIÓN INICIAL Y FALLBACK
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (!mounted) return;
 
                 if (addresses.isEmpty) {
-                  // Caso 1: No hay direcciones secundarias, usar principal
                   if (_selectedAddressId == null ||
                       _selectedAddressId != mainPartnerId) {
                     setState(() {
@@ -306,8 +314,8 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                       _selectedAddressStreet = 'Dirección Principal';
                     });
                   }
-                } else if (_selectedAddressId == null) {
-                  // Caso 2: Hay direcciones secundarias y nada seleccionado, usar la primera
+                } else if (_selectedAddressId == null ||
+                    _selectedAddressId == 0) {
                   final firstAddr = findAddress(addresses.first['id'] as int);
                   setState(() {
                     _selectedAddressId = firstAddr['id'] as int;
@@ -323,11 +331,11 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                         fontStyle: FontStyle.italic, color: Colors.blue));
               }
 
-              // Preseleccionar el ID actual o el primer ID disponible
               final int initialId =
                   _selectedAddressId ?? addresses.first['id'] as int;
 
               return DropdownButtonFormField<int>(
+                // ✅ CORRECCIÓN 1: 'value' -> 'initialValue'
                 initialValue: initialId,
                 hint: const Text('Seleccione dirección de entrega...'),
                 isExpanded: true,
@@ -369,58 +377,94 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   }
 
   Widget _buildProductCatalog() {
-    // ... (resto del método se mantiene sin cambios)
     return Expanded(
       child: Column(
         children: [
           Padding(
             padding:
                 const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
-            child: Row(
+            child: Column(
               children: [
-                Expanded(
-                  child: TextField(
-                    controller: _searchController,
-                    decoration: InputDecoration(
-                        labelText: 'Buscar producto...',
-                        prefixIcon: const Icon(Icons.search),
-                        border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8))),
-                  ),
+                TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                      labelText: 'Buscar producto...',
+                      prefixIcon: const Icon(Icons.search),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8))),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: FutureBuilder<List<Map<String, dynamic>>>(
-                    future: _categoriesFuture,
-                    builder: (context, snapshot) {
-                      if (!snapshot.hasData) {
-                        return const SizedBox(height: 58);
-                      }
-                      _categories = snapshot.data!;
-                      return DropdownButtonFormField<int>(
-                        initialValue: _selectedCategoryId,
-                        hint: const Text('Categoría'),
-                        decoration: InputDecoration(
-                            border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8))),
-                        isExpanded: true,
-                        items: [
-                          const DropdownMenuItem<int>(
-                              value: null, child: Text('Todas')),
-                          ..._categories!.map((cat) {
-                            return DropdownMenuItem(
-                                value: cat['id'] as int,
-                                child: Text(cat['name'],
-                                    overflow: TextOverflow.ellipsis));
-                          }),
-                        ],
-                        onChanged: (value) {
-                          _selectedCategoryId = value;
-                          _fetchAndSetProducts();
+                const SizedBox(height: 8),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: FutureBuilder<List<Map<String, dynamic>>>(
+                        future: _categoriesFuture,
+                        builder: (context, snapshot) {
+                          if (!snapshot.hasData) {
+                            return const SizedBox(height: 58);
+                          }
+                          _categories = snapshot.data!;
+                          return DropdownButtonFormField<int>(
+                            // ✅ CORRECCIÓN 2: 'value' -> 'initialValue'
+                            initialValue: _selectedCategoryId,
+                            hint: const Text('Categoría'),
+                            decoration: InputDecoration(
+                                border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8))),
+                            isExpanded: true,
+                            items: [
+                              const DropdownMenuItem<int>(
+                                  value: null, child: Text('Todas')),
+                              if (_categories != null)
+                                ..._categories!.map((cat) => DropdownMenuItem(
+                                      value: cat['id'] as int,
+                                      child: Text(cat['name'],
+                                          overflow: TextOverflow.ellipsis),
+                                    )),
+                            ],
+                            onChanged: (value) {
+                              setState(() {
+                                _selectedCategoryId = value;
+                                _selectedSubCategoryId = null;
+                                _subCategories.clear();
+                                if (value != null) {
+                                  _fetchSubCategories(value);
+                                }
+                                _fetchAndSetProducts();
+                              });
+                            },
+                          );
                         },
-                      );
-                    },
-                  ),
+                      ),
+                    ),
+                    if (_subCategories.isNotEmpty) ...[
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: DropdownButtonFormField<int>(
+                          // ✅ CORRECCIÓN 3: 'value' -> 'initialValue'
+                          initialValue: _selectedSubCategoryId,
+                          hint: const Text('Subcategoría'),
+                          decoration: InputDecoration(
+                              border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8))),
+                          isExpanded: true,
+                          items: _subCategories
+                              .map((cat) => DropdownMenuItem(
+                                  value: cat['id'] as int,
+                                  child: Text(cat['name'],
+                                      overflow: TextOverflow.ellipsis)))
+                              .toList(),
+                          onChanged: (value) {
+                            setState(() {
+                              _selectedSubCategoryId = value;
+                            });
+                            _fetchAndSetProducts();
+                          },
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ],
             ),

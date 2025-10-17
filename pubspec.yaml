@@ -22,10 +22,14 @@ dependencies:
   flutter_launcher_icons: ^0.14.4
   intl: ^0.20.2
 
+  pdf: ^3.7.0  # Para crear el PDF
+  path_provider: ^2.0.11 # Para obtener la ruta donde guardar temporalmente el PDF
+  printing: ^5.10.1 # Para previsualizar y compartir el PDF
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^2.0.0
+  flutter_lints: ^6.0.0
   
 flutter:
   uses-material-design: true

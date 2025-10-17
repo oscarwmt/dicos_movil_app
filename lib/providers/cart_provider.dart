@@ -3,6 +3,7 @@
 import 'package:flutter/foundation.dart';
 import '../models/cart_item_model.dart';
 import '../models/customer_model.dart';
+import '../models/product_model.dart'; // Asegúrate de que esta importación exista
 
 class CartProvider with ChangeNotifier {
   final Map<int, CartItem> _items = {};
@@ -15,7 +16,6 @@ class CartProvider with ChangeNotifier {
   double get totalAmount {
     double total = 0.0;
     for (var item in _items.values) {
-      // ✅ CORRECCIÓN CLAVE: Solo se suma si el producto tiene stock.
       if (item.product.stock > 0) {
         total += item.product.price * item.quantity;
       }
@@ -35,7 +35,8 @@ class CartProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  void addItem(product, {int quantity = 1}) {
+  // ✅ SOLUCIÓN: Se añadió el tipo 'Product' al parámetro 'product'
+  void addItem(Product product, {int quantity = 1}) {
     final productId = product.id;
     if (_items.containsKey(productId)) {
       _items.update(
@@ -59,7 +60,6 @@ class CartProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // ✅ CORRECCIÓN CLAVE: El método ya NO tiene el argumento 'required bool isInStock'
   void removeSingleItem(int productId) {
     if (!_items.containsKey(productId)) {
       return;

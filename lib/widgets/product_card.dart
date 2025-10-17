@@ -10,33 +10,41 @@ import '../screens/product_detail/product_detail_screen.dart';
 class ProductCard extends StatelessWidget {
   final Product product;
 
-  const ProductCard({super.key, required this.product});
+  const ProductCard({
+    super.key,
+    required this.product,
+  });
+
+  void _onCardTap(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (ctx) => ProductDetailScreen(product: product),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final cart = Provider.of<CartProvider>(context, listen: false);
-    final priceFormatter = NumberFormat('#,##0', 'es_CL');
+    final priceFormatter = NumberFormat.currency(
+        locale: 'es', symbol: '\$', decimalDigits: 0, customPattern: '\$#,##0');
 
-    // ✅ CORRECCIÓN: Definición segura del valor de la unidad de venta
-    final String safeSalesUnit = product.salesUnit ?? 'Unidad';
+    final buttonLabel = product.stock > 0 ? 'Agregar' : 'Solicitar';
+    final buttonColor =
+        product.stock > 0 ? Theme.of(context).primaryColor : Colors.red;
 
     return Card(
       elevation: 4,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (ctx) => ProductDetailScreen(product: product),
-            ),
-          );
-        },
+        onTap: () => _onCardTap(context),
+        borderRadius: BorderRadius.circular(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Expanded(
-              flex: 5, // Flex para la imagen
+              flex: 5,
               child: Container(
                 color: Colors.grey[200],
                 child: product.imageUrl.isNotEmpty
@@ -50,13 +58,12 @@ class ProductCard extends StatelessWidget {
               ),
             ),
             Expanded(
-              flex: 6, // Flex para el contenido de texto
+              flex: 6,
               child: Padding(
                 padding: const EdgeInsets.all(8.0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment:
-                      MainAxisAlignment.spaceBetween, // Distribuye el espacio
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -69,8 +76,7 @@ class ProductCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          // ✅ CORREGIDO: Usamos la variable segura
-                          safeSalesUnit,
+                          product.salesUnit ?? 'Unidad',
                           style: const TextStyle(
                               fontSize: 11,
                               color: Colors.grey,
@@ -99,12 +105,12 @@ class ProductCard extends StatelessWidget {
                                 children: [
                                   TextSpan(
                                       text:
-                                          '\$${priceFormatter.format(product.price)}'),
-                                  TextSpan(
+                                          priceFormatter.format(product.price)),
+                                  const TextSpan(
                                     text: ' + IVA',
                                     style: TextStyle(
                                         fontSize: 10,
-                                        color: Colors.grey.shade700,
+                                        color: Colors.black54,
                                         fontWeight: FontWeight.normal),
                                   ),
                                 ],
@@ -114,7 +120,7 @@ class ProductCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Stock: ${product.stock}',
+                          'Stock: ${product.stock.toInt()}',
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
@@ -135,6 +141,8 @@ class ProductCard extends StatelessWidget {
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 4),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  backgroundColor: buttonColor,
+                  foregroundColor: Colors.white, // ✅ ¡AQUÍ ESTÁ LA CORRECCIÓN!
                 ),
                 onPressed: () {
                   cart.addItem(product, quantity: 1);
@@ -146,7 +154,7 @@ class ProductCard extends StatelessWidget {
                     ),
                   );
                 },
-                child: Text(product.stock > 0 ? 'Agregar' : 'Solicitar'),
+                child: Text(buttonLabel),
               ),
             ),
           ],

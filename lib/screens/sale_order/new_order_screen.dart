@@ -35,12 +35,10 @@ class NewOrderScreen extends StatelessWidget {
     final OdooApiClient apiClient = OdooApiClient();
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
 
-    // Capturar el Navigator y el ScaffoldMessenger antes del async gap
     final navigator = Navigator.of(context);
     final scaffoldMessenger = ScaffoldMessenger.of(context);
 
     try {
-      // Mostrar indicador de carga
       showDialog(
         context: context,
         builder: (ctx) => const Center(child: CircularProgressIndicator()),
@@ -60,7 +58,6 @@ class NewOrderScreen extends StatelessWidget {
         await apiClient.reportOutOfStockDemand(outOfStockItems, customer.id);
       }
 
-      // Limpiar el carrito y cerrar el modal.
       cart.clear();
       if (navigator.canPop()) {
         navigator.pop();
@@ -85,14 +82,11 @@ class NewOrderScreen extends StatelessWidget {
     }
   }
 
-  // Método para manejar la reducción de cantidad y confirmación de eliminación
   Future<void> _handleQuantityDecrement(
       BuildContext context, CartProvider cart, CartItem item) async {
     if (item.quantity > 1) {
-      // Si la cantidad es > 1, solo la reducimos
       cart.removeSingleItem(item.product.id);
     } else {
-      // Si la cantidad es 1, pedimos confirmación para eliminar
       final shouldDelete = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -118,22 +112,19 @@ class NewOrderScreen extends StatelessWidget {
     }
   }
 
-  // ✅ Método auxiliar para construir el panel de precio/cantidad (Columna Derecha)
   Widget _buildPriceAndQuantityControls(
       BuildContext context, CartItem item, NumberFormat formatter) {
-    // ✅ CORRECCIÓN CLAVE: La variable itemTotalNeto se calcula aquí
     final double itemTotalNeto = item.product.price * item.quantity;
     final CartProvider cart = Provider.of<CartProvider>(context, listen: false);
 
     final bool hasStock = item.product.stock > 0;
 
     return SizedBox(
-      width: 125, // Aseguramos un ancho fijo para este panel
+      width: 125,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // 1. Panel de Precio (Visible solo si hay stock)
           if (hasStock)
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
@@ -147,21 +138,15 @@ class NewOrderScreen extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
                 ),
-                // Impuestos
                 const Text('+ IMPUESTOS',
                     style: TextStyle(
                         fontSize: 8, color: Colors.black54, height: 1.0)),
               ],
             ),
-
-          // Separador (solo si hay precio arriba)
           SizedBox(height: hasStock ? 5 : 0),
-
-          // 2. Objeto de Cantidad (Visible siempre)
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              // Botón de decrementar/eliminar
               IconButton(
                 icon: Icon(
                   item.quantity > 1
@@ -174,16 +159,14 @@ class NewOrderScreen extends StatelessWidget {
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
               ),
-              // Cantidad
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8.0),
                 child: Text(
-                  '${item.quantity}',
+                  item.quantity.toString(),
                   style: const TextStyle(
                       fontSize: 14, fontWeight: FontWeight.bold),
                 ),
               ),
-              // Botón de incrementar
               IconButton(
                 icon: const Icon(Icons.add_circle_outline,
                     color: Colors.green, size: 20),
@@ -200,13 +183,11 @@ class NewOrderScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Escucha al carrito para redibujar al cambiar cantidades
     final cart = Provider.of<CartProvider>(context);
     final totalNetoEstimado = cart.totalAmount;
     final totalImpuestosEstimado = totalNetoEstimado * 0.19;
     final totalFinalEstimado = totalNetoEstimado + totalImpuestosEstimado;
 
-    // Formateador con símbolo '$' al inicio
     final NumberFormat currencyFormatter = NumberFormat.currency(
         locale: 'es', symbol: '\$', decimalDigits: 0, customPattern: '\$#,##0');
 
@@ -218,7 +199,6 @@ class NewOrderScreen extends StatelessWidget {
       ),
       body: Column(
         children: [
-          // Sección de Encabezado (Cliente y Dirección)
           Container(
             padding: const EdgeInsets.all(16),
             width: double.infinity,
@@ -235,8 +215,6 @@ class NewOrderScreen extends StatelessWidget {
                   style: const TextStyle(fontSize: 16),
                 ),
                 const SizedBox(height: 8),
-
-                // Dirección de entrega
                 const Text(
                   'Dirección de Entrega:',
                   style: TextStyle(
@@ -257,28 +235,22 @@ class NewOrderScreen extends StatelessWidget {
               ],
             ),
           ),
-
-          // Listado de Productos
           Expanded(
             child: ListView.builder(
               itemCount: cart.items.length,
               itemBuilder: (ctx, i) {
                 final CartItem item = cart.items[i];
                 final String safeSalesUnit = item.product.salesUnit ?? 'Unidad';
-
-                // Determinar si hay stock
-                final bool hasStock = item.product.stock > 0;
+                final Color borderColor = item.product.stock <= 0
+                    ? Colors.red.shade400
+                    : Colors.grey.shade300;
 
                 return Padding(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                   child: Container(
                     decoration: BoxDecoration(
-                      // BORDE CONDICIONAL: Rojo si no hay stock, Gris si hay stock
-                      border: Border.all(
-                        color: hasStock ? Colors.grey.shade300 : Colors.red,
-                        width: 1.5,
-                      ),
+                      border: Border.all(color: borderColor, width: 1.2),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     padding: const EdgeInsets.only(
@@ -286,12 +258,10 @@ class NewOrderScreen extends StatelessWidget {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Columna 1: Nombre y Unidad de Venta (Flexible)
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              // Título del Producto (Siempre visible)
                               Text(
                                 item.product.name,
                                 style: const TextStyle(
@@ -301,28 +271,27 @@ class NewOrderScreen extends StatelessWidget {
                               ),
                               const SizedBox(height: 4),
 
-                              // UNIDAD DE VENTA (Visible solo si hay stock)
-                              if (hasStock)
-                                Text(
-                                  '(${item.product.unitsPerPackage} por ${safeSalesUnit})',
-                                  style: const TextStyle(
-                                      fontSize: 12, color: Colors.grey),
+                              if (item.product.stock <= 0)
+                                const Text(
+                                  'SIN STOCK (PARA DEMANDA)',
+                                  style: TextStyle(
+                                    color: Colors.red,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
 
-                              // MENSAJE SIN STOCK (Si no hay stock)
-                              if (!hasStock)
-                                const Text(
-                                  '(Producto sin stock/cotización)',
-                                  style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.red,
-                                      fontStyle: FontStyle.italic),
-                                ),
+                              // ✅ SOLUCIÓN: Interpolación innecesaria eliminada
+                              Text(
+                                '(${item.product.unitsPerPackage} por $safeSalesUnit)',
+                                style: const TextStyle(
+                                    fontSize: 12, color: Colors.grey),
+                              ),
+
+                              const SizedBox(height: 10),
                             ],
                           ),
                         ),
-
-                        // Columna 2: Controles de Precio y Cantidad (Fijo)
                         _buildPriceAndQuantityControls(
                             context, item, currencyFormatter),
                       ],
@@ -332,8 +301,6 @@ class NewOrderScreen extends StatelessWidget {
               },
             ),
           ),
-
-          // Resumen Final: Neto, Impuestos, Total
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -347,7 +314,6 @@ class NewOrderScreen extends StatelessWidget {
             ),
             child: Column(
               children: [
-                // 1. Total Neto
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -358,7 +324,6 @@ class NewOrderScreen extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 5),
-                // 2. Impuestos (Placeholder)
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -369,7 +334,6 @@ class NewOrderScreen extends StatelessWidget {
                   ],
                 ),
                 const Divider(),
-                // 3. Total Final
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
