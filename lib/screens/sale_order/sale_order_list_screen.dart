@@ -48,32 +48,39 @@ class _SaleOrderListScreenState extends State<SaleOrderListScreen> {
   // LÓGICA DE FILTRADO Y RECARGA
   // ===============================================
 
+  // ✅ FUNCIÓN CORREGIDA
   Future<List<SaleOrder>> _fetchOrdersWithSearch() async {
+    // 1. Obtener el dominio base (filtros de estado)
     final domain = _buildBaseDomain();
     final orderBy = _buildOrderByClause();
 
     if (_currentSearchQuery.isNotEmpty) {
       final query = _currentSearchQuery;
 
-      // 1. Buscamos primero los IDs de cliente que coinciden con el nombre
-      final partnerIds = await widget.apiClient.searchPartnerIdsByName(query);
+      // 2. Intentar convertir el query a número (para N° Orden)
+      final isNumeric = int.tryParse(query) != null;
 
-      // 2. Definimos el dominio de búsqueda combinada (N° Orden O Cliente ID)
-      if (partnerIds.isNotEmpty) {
-        // Si encontramos clientes, aplicamos el filtro OR
-        domain.add([
-          '|',
-          ['name', 'ilike', query], // Busca por N° Orden
-          ['partner_id', 'in', partnerIds], // Busca por ID de Cliente
-        ]);
-      } else {
-        // Si NO encontramos IDs de cliente, la búsqueda por nombre de cliente
-        // falla, por lo que solo buscamos por N° Orden.
+      if (isNumeric) {
+        // Si es numérico, buscamos solo por N° Orden (ilike funciona bien con números en Odoo)
         domain.add(['name', 'ilike', query]);
+      } else {
+        // Si es texto, buscamos IDs de cliente que coincidan
+        final partnerIds = await widget.apiClient.searchPartnerIdsByName(query);
+
+        if (partnerIds.isNotEmpty) {
+          // Si encontramos clientes, filtramos por esos IDs
+          domain.add(['partner_id', 'in', partnerIds]);
+        } else {
+          // Si no encontramos clientes, es probable que la búsqueda no arroje resultados.
+          // Forzamos un dominio que no devuelva nada para evitar errores.
+          // (Buscar 'ilike' en 'partner_id' causa el error 'list object has no attribute lower')
+          // Una búsqueda por un ID imposible (ej. 0) asegura una respuesta vacía y limpia.
+          domain.add(['id', '=', 0]); // No se encontraron clientes
+        }
       }
     }
 
-    // Llamada a la API con el dominio final
+    // 3. Llamada a la API con el dominio final y limpio
     return widget.apiClient.fetchSaleOrders(domain: domain, orderBy: orderBy);
   }
 
@@ -93,7 +100,6 @@ class _SaleOrderListScreenState extends State<SaleOrderListScreen> {
       case SortCriteria.amount:
         field = 'amount_total';
         break;
-      // No hay 'default', resolviendo la advertencia 'unreachable_switch_default'
     }
 
     final direction = _isAscending ? 'asc' : 'desc';
@@ -163,6 +169,8 @@ class _SaleOrderListScreenState extends State<SaleOrderListScreen> {
         return 'Cotización';
       case 'sale':
         return 'Pedido Confirmado';
+      case 'cancel':
+        return 'Cancelado';
       default:
         return state;
     }
@@ -302,7 +310,10 @@ class _SaleOrderListScreenState extends State<SaleOrderListScreen> {
                 }
                 if (snapshot.hasError) {
                   return Center(
-                      child: Text('Error al cargar ventas: ${snapshot.error}'));
+                      child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Text('Error al cargar ventas: ${snapshot.error}'),
+                  ));
                 }
                 if (!snapshot.hasData || snapshot.data!.isEmpty) {
                   return const Center(

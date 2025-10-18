@@ -33,8 +33,7 @@ class NewOrderScreen extends StatelessWidget {
     }
 
     final OdooApiClient apiClient = OdooApiClient();
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-
+    if (!context.mounted) return; // Chequeo de seguridad
     final navigator = Navigator.of(context);
     final scaffoldMessenger = ScaffoldMessenger.of(context);
 
@@ -52,16 +51,13 @@ class NewOrderScreen extends StatelessWidget {
         isQuotation: isQuotation,
       );
 
-      final outOfStockItems =
-          cart.items.where((item) => item.product.stock <= 0).toList();
-      if (outOfStockItems.isNotEmpty) {
-        await apiClient.reportOutOfStockDemand(outOfStockItems, customer.id);
-      }
-
+      // La lógica de reportOutOfStockDemand ya está en createSaleOrder
       cart.clear();
-      if (navigator.canPop()) {
-        navigator.pop();
-      }
+
+      if (!navigator.canPop()) return; // Si ya no puede hacer pop, no seguir
+      navigator.pop(); // Cierra el diálogo de carga
+
+      // Volver a la primera pantalla
       navigator.popUntil((route) => route.isFirst);
 
       scaffoldMessenger.showSnackBar(SnackBar(
@@ -71,9 +67,9 @@ class NewOrderScreen extends StatelessWidget {
         duration: const Duration(seconds: 4),
       ));
     } catch (e) {
-      if (navigator.canPop()) {
-        navigator.pop();
-      }
+      if (!navigator.canPop()) return; // Si ya no puede hacer pop, no seguir
+      navigator.pop(); // Cierra el diálogo de carga
+
       scaffoldMessenger.showSnackBar(SnackBar(
         content: Text('Error al grabar el pedido: $e'),
         backgroundColor: Colors.red,
@@ -87,6 +83,7 @@ class NewOrderScreen extends StatelessWidget {
     if (item.quantity > 1) {
       cart.removeSingleItem(item.product.id);
     } else {
+      if (!context.mounted) return; // Chequeo de seguridad
       final shouldDelete = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -281,7 +278,8 @@ class NewOrderScreen extends StatelessWidget {
                                   ),
                                 ),
 
-                              // ✅ SOLUCIÓN: Interpolación innecesaria eliminada
+                              // ✅ SOLUCIÓN: Ignorar el falso positivo del analizador
+                              // ignore: unnecessary_string_interpolations
                               Text(
                                 '(${item.product.unitsPerPackage} por $safeSalesUnit)',
                                 style: const TextStyle(

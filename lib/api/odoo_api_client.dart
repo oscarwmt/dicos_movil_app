@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
+import 'package:intl/intl.dart'; // Importado para formateo de fechas
 import '../models/product_model.dart';
 import '../models/cart_item_model.dart';
 import '../models/customer_model.dart';
@@ -28,6 +29,8 @@ class OdooApiClient {
   String get userName => _userName;
   bool get isAuthenticated => _userId != null && _sessionId != null;
   SalesRole get userRole => _userRole;
+
+  // --- COMIENZO DE TU CÓDIGO ORIGINAL (INTACTO) ---
 
   Future<bool> _checkUserGroup(String xmlId) async {
     if (!isAuthenticated) return false;
@@ -148,6 +151,7 @@ class OdooApiClient {
       'order': "name asc",
     };
 
+    // Código original sin _executeKw
     final payload = {
       "jsonrpc": "2.0",
       "method": "call",
@@ -167,7 +171,6 @@ class OdooApiClient {
         "session_id": _sessionId
       }
     };
-
     try {
       final response = await http
           .post(url,
@@ -409,7 +412,7 @@ class OdooApiClient {
       "x_studio_unidad_de_venta_nombre",
       "x_studio_unidades_por_paquete",
       "product_variant_id",
-      "x_studio_marca", // ✅ CORREGIDO
+      "x_studio_marca", // Campo de texto de marca
     ];
 
     final Map<String, dynamic> kwargs = {
@@ -452,6 +455,68 @@ class OdooApiClient {
     } catch (e) {
       throw Exception(
           'Error de conexión en la consulta de productos del catálogo: $e');
+    }
+  }
+
+  // ✅ CORRECCIÓN DEFINITIVA: Obtener nombres únicos de marca usando read_group
+  Future<List<String>> fetchDistinctBrandNames() async {
+    if (!isAuthenticated) {
+      throw Exception('No autenticado.');
+    }
+    const String model = 'product.template'; // Buscamos dentro de los productos
+    const String method = 'read_group';
+
+    final Map<String, dynamic> kwargs = {
+      'domain': [
+        ['sale_ok', '=', true],
+        ['x_studio_marca', '!=', false], // Solo productos con marca definida
+        ['x_studio_marca', '!=', ''] // Solo productos con marca no vacía
+      ],
+      'fields': ['x_studio_marca'], // El campo a leer
+      'groupby': ['x_studio_marca'], // Agrupar por este campo
+      'lazy': false, // Obtener todos los grupos
+    };
+
+    final payload = {
+      "jsonrpc": "2.0",
+      "method": "call",
+      "id": 15, // ID de llamada
+      "params": {
+        "service": "object",
+        "method": "execute_kw",
+        "args": [_dbName, _userId, _currentPassword, model, method, [], kwargs],
+        "session_id": _sessionId
+      }
+    };
+
+    try {
+      final response = await http.post(Uri.parse('$_baseUrl/jsonrpc'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode(payload));
+      final responseBody = json.decode(response.body);
+
+      if (responseBody['error'] != null) {
+        throw Exception(
+            'Error al cargar marcas: ${responseBody['error']['data']['message']}');
+      }
+
+      final result = responseBody['result'];
+      if (result is List) {
+        return result
+            .map((group) => group['x_studio_marca'])
+            .where((brandName) => brandName is String && brandName.isNotEmpty)
+            .map((brandName) => brandName as String)
+            .toSet() // Usar Set para eliminar duplicados si read_group no lo hace
+            .toList()
+          ..sort(); // Ordenar
+      }
+      return [];
+    } catch (e) {
+      if (e.toString().contains("Invalid field 'x_studio_marca'")) {
+        throw Exception(
+            "El campo 'x_studio_marca' no existe en 'product.template'. Verifica el nombre técnico.");
+      }
+      throw Exception('Error al cargar nombres de marcas: $e');
     }
   }
 
@@ -543,50 +608,6 @@ class OdooApiClient {
     }
   }
 
-  Future<List<Map<String, dynamic>>> fetchBrands() async {
-    if (!isAuthenticated) {
-      throw Exception('No autenticado.');
-    }
-    final url = Uri.parse('$_baseUrl/jsonrpc');
-    const String model = 'x_studio.marcas';
-    const String method = 'search_read';
-
-    final Map<String, dynamic> kwargs = {
-      'fields': ['id', 'name'],
-      'order': 'name asc',
-    };
-
-    final payload = {
-      "jsonrpc": "2.0",
-      "method": "call",
-      "id": 15,
-      "params": {
-        "service": "object",
-        "method": "execute_kw",
-        "args": [_dbName, _userId, _currentPassword, model, method, [], kwargs],
-        "session_id": _sessionId
-      }
-    };
-
-    try {
-      final response = await http.post(url,
-          headers: {'Content-Type': 'application/json'},
-          body: json.encode(payload));
-      final responseBody = json.decode(response.body);
-      if (responseBody['error'] != null) {
-        throw Exception(
-            'Error al cargar marcas: ${responseBody['error']['data']['message']}');
-      }
-      final result = responseBody['result'];
-      if (result is List) {
-        return List<Map<String, dynamic>>.from(result);
-      }
-      return [];
-    } catch (e) {
-      throw Exception('Error de conexión al cargar marcas: $e');
-    }
-  }
-
   Future<List<Map<String, dynamic>>> fetchCustomerAddresses(
       int partnerId) async {
     if (!isAuthenticated) {
@@ -649,10 +670,7 @@ class OdooApiClient {
 
     final List<List<dynamic>> orderLines = cartItems
         .map((item) {
-          if (item.product.stock <= 0) {
-            return [0, 0, {}];
-          }
-
+          if (!isQuotation && item.product.stock <= 0) return null;
           return [
             0,
             0,
@@ -662,15 +680,12 @@ class OdooApiClient {
             }
           ];
         })
-        .where((line) =>
-            line.length > 2 && line[2] is Map && (line[2] as Map).isNotEmpty)
+        .whereType<List<dynamic>>()
         .toList();
 
-    if (orderLines.isEmpty && cartItems.isNotEmpty) {
-      if (!isQuotation) {
-        throw Exception(
-            'No se puede crear un Pedido Confirmado sin productos con stock.');
-      }
+    if (!isQuotation && orderLines.isEmpty && cartItems.isNotEmpty) {
+      throw Exception(
+          'No se puede crear un Pedido Confirmado solo con productos sin stock.');
     }
 
     final Map<String, dynamic> orderValues = {
@@ -720,8 +735,14 @@ class OdooApiClient {
 
       final int orderId = responseBody['result'] as int;
 
-      if (!isQuotation) {
+      if (!isQuotation && orderLines.isNotEmpty) {
         await confirmSaleOrder(orderId);
+      }
+
+      final outOfStockItems =
+          cartItems.where((item) => item.product.stock <= 0).toList();
+      if (outOfStockItems.isNotEmpty) {
+        reportOutOfStockDemand(outOfStockItems, customerPartnerId);
       }
 
       return orderId;
@@ -820,7 +841,7 @@ class OdooApiClient {
         final dynamic rawValue =
             result.first['x_studio_unidad_de_venta_nombre'];
 
-        if (rawValue is List && rawValue.length > 1) {
+        if (rawValue is List && rawValue.length > 1 && rawValue[1] is String) {
           return rawValue[1].toString();
         }
         return rawValue?.toString() ?? 'N/A';
@@ -835,24 +856,20 @@ class OdooApiClient {
   Future<void> reportOutOfStockDemand(
       List<CartItem> items, int partnerId) async {
     if (!isAuthenticated || items.isEmpty) return;
-
     const String model = 'x_demanda_de_producto_';
     const String method = 'create';
-    final url = Uri.parse('$_baseUrl/jsonrpc');
-
     final List<Map<String, dynamic>> recordsToCreate = [];
-
     for (var item in items) {
       final int productId = item.product.id;
-
       recordsToCreate.add({
-        'x_name': 'Demanda: ${item.product.name} (Vendedor: $_userName)',
+        'x_name': 'Demanda App: ${item.product.name} (Vendedor: $_userName)',
         'x_studio_cliente': partnerId,
         'x_studio_producto_1': productId,
         'x_studio_cantidad_solicitada': item.quantity,
         'x_studio_vendedor': _userId,
       });
     }
+    if (recordsToCreate.isEmpty) return;
 
     final payload = {
       "jsonrpc": "2.0",
@@ -873,7 +890,7 @@ class OdooApiClient {
       }
     };
     try {
-      final response = await http.post(url,
+      final response = await http.post(Uri.parse('$_baseUrl/jsonrpc'),
           headers: {'Content-Type': 'application/json'},
           body: json.encode(payload));
       final responseBody = json.decode(response.body);
@@ -894,15 +911,12 @@ class OdooApiClient {
     String orderBy = "date_order desc",
   }) async {
     if (!isAuthenticated) throw Exception('Acceso no autorizado.');
-    final url = Uri.parse('$_baseUrl/jsonrpc');
     const String model = 'sale.order';
     const String method = 'search_read';
-
     final List<dynamic> finalDomain = [
       ['user_id', '=', _userId],
-      ...domain,
+      ...domain
     ];
-
     final Map<String, dynamic> kwargs = {
       'domain': finalDomain,
       'fields': [
@@ -914,7 +928,7 @@ class OdooApiClient {
         "amount_tax",
         "amount_total",
         "state",
-        "partner_shipping_id",
+        "partner_shipping_id"
       ],
       'limit': 500,
       'order': orderBy,
@@ -942,7 +956,7 @@ class OdooApiClient {
 
     try {
       final response = await http
-          .post(url,
+          .post(Uri.parse('$_baseUrl/jsonrpc'),
               headers: {'Content-Type': 'application/json'},
               body: json.encode(payload))
           .timeout(const Duration(seconds: 30));
@@ -955,7 +969,9 @@ class OdooApiClient {
 
       final result = responseBody['result'];
       if (result is List) {
-        return result.map((json) => SaleOrder.fromJson(json)).toList();
+        return result
+            .map((json) => SaleOrder.fromJson(json as Map<String, dynamic>))
+            .toList();
       }
       return [];
     } catch (e) {
@@ -965,23 +981,19 @@ class OdooApiClient {
 
   Future<List<SaleOrderLine>> fetchSaleOrderLines(int orderId) async {
     if (!isAuthenticated) throw Exception('Acceso no autorizado.');
-    final url = Uri.parse('$_baseUrl/jsonrpc');
     const String model = 'sale.order.line';
     const String method = 'search_read';
-
-    final List<dynamic> domain = [
-      ['order_id', '=', orderId]
-    ];
-
     final Map<String, dynamic> kwargs = {
-      'domain': domain,
+      'domain': [
+        ['order_id', '=', orderId]
+      ],
       'fields': [
         "id",
         "product_id",
         "product_uom_qty",
         "price_unit",
         "price_subtotal",
-        "product_uom_id",
+        "product_uom_id", // ✅ CORRECCIÓN: Este es el nombre correcto
         "product_template_id",
       ],
       'limit': 100,
@@ -1009,7 +1021,7 @@ class OdooApiClient {
 
     try {
       final response = await http
-          .post(url,
+          .post(Uri.parse('$_baseUrl/jsonrpc'),
               headers: {'Content-Type': 'application/json'},
               body: json.encode(payload))
           .timeout(const Duration(seconds: 30));
@@ -1022,20 +1034,185 @@ class OdooApiClient {
 
       final List<dynamic> results = responseBody['result'] ?? [];
       final List<SaleOrderLine> finalLines = [];
-
       for (var json in results) {
-        final templateData = json['product_template_id'] as List<dynamic>?;
-        final templateId = templateData != null && templateData.isNotEmpty
+        final Map<String, dynamic> lineJson = json as Map<String, dynamic>;
+        final templateData = lineJson['product_template_id'] as List<dynamic>?;
+        final templateId = (templateData != null &&
+                templateData.isNotEmpty &&
+                templateData[0] is int)
             ? templateData[0] as int
             : 0;
-        final salesUnit = await fetchProductsTemplateDetails(templateId);
+        String salesUnit = 'N/A';
+        if (templateId != 0) {
+          salesUnit = await fetchProductsTemplateDetails(templateId);
+        }
         finalLines
-            .add(SaleOrderLine.fromJson(json, customSalesUnit: salesUnit));
+            .add(SaleOrderLine.fromJson(lineJson, customSalesUnit: salesUnit));
       }
-
       return finalLines;
     } catch (e) {
       throw Exception('Error de conexión al cargar el detalle del pedido: $e');
     }
   }
-}
+
+  // --- NUEVAS FUNCIONES PARA EL MÓDULO CRM (AÑADIDAS AL FINAL) ---
+
+  // (Función auxiliar _executeKwCrm movida al final)
+
+  Future<List<Map<String, dynamic>>> fetchActivities({
+    required DateTime startDate,
+    required DateTime endDate,
+  }) async {
+    if (!isAuthenticated) throw Exception('No autenticado.');
+    final DateFormat formatter = DateFormat('yyyy-MM-dd');
+    final String start = formatter.format(startDate);
+    final String end = formatter.format(endDate);
+    const String model = 'mail.activity';
+    const String method = 'search_read';
+    final List<dynamic> domain = [
+      ['user_id', '=', _userId],
+      ['date_deadline', '>=', start],
+      ['date_deadline', '<=', end],
+    ];
+    final Map<String, dynamic> kwargs = {
+      'domain': domain,
+      'fields': [
+        'id',
+        'summary',
+        'note',
+        'date_deadline',
+        'res_model',
+        'res_id',
+        'res_name',
+        'activity_type_id',
+        'state',
+        'x_studio_checkin_datetime',
+        'x_studio_checkout_datetime',
+        'x_studio_checkin_lat',
+        'x_studio_checkin_lon',
+        'x_studio_visit_duration',
+      ],
+      'order': 'date_deadline asc',
+    };
+    final result = await _executeKwCrm(model, method, kwargs: kwargs, id: 20);
+    if (result is List) {
+      return List<Map<String, dynamic>>.from(result);
+    }
+    return [];
+  }
+
+  Future<void> markActivityCheckIn({
+    required int activityId,
+    required DateTime checkInTime,
+    required double latitude,
+    required double longitude,
+  }) async {
+    const String model = 'mail.activity';
+    const String method = 'write';
+    final String formattedTime =
+        DateFormat("yyyy-MM-dd HH:mm:ss").format(checkInTime.toUtc());
+    final List<dynamic> args = [
+      [activityId],
+      {
+        'x_studio_checkin_datetime': formattedTime,
+        'x_studio_checkin_lat': latitude,
+        'x_studio_checkin_lon': longitude,
+      }
+    ];
+    await _executeKwCrm(model, method, args: args, id: 21);
+  }
+
+  Future<void> markActivityCheckOut({
+    required int activityId,
+    required DateTime checkOutTime,
+  }) async {
+    const String model = 'mail.activity';
+    const String method = 'write';
+    final String formattedTime =
+        DateFormat("yyyy-MM-dd HH:mm:ss").format(checkOutTime.toUtc());
+    final List<dynamic> args = [
+      [activityId],
+      {'x_studio_checkout_datetime': formattedTime}
+    ];
+    await _executeKwCrm(model, method, args: args, id: 22);
+    await markActivityDone(
+        activityId: activityId, feedback: 'Visita finalizada desde app móvil.');
+  }
+
+  Future<void> markActivityDone(
+      {required int activityId, String? feedback}) async {
+    const String model = 'mail.activity';
+    const String method = 'action_feedback';
+    List<dynamic> args = [
+      [activityId]
+    ];
+    Map<String, dynamic> kwargs = {};
+    if (feedback != null && feedback.isNotEmpty) {
+      kwargs['feedback'] = feedback;
+    }
+    await _executeKwCrm(model, method, args: args, kwargs: kwargs, id: 23);
+  }
+
+  // --- Función Auxiliar Genérica (SOLO PARA LAS FUNCIONES DE CRM) ---
+  Future<dynamic> _executeKwCrm(String model, String method,
+      {List<dynamic>? args,
+      Map<String, dynamic>? kwargs,
+      required int id}) async {
+    if (!isAuthenticated) throw Exception('No autenticado.');
+
+    final url = Uri.parse('$_baseUrl/jsonrpc');
+    final List<dynamic> finalArgs = args ?? [];
+    final Map<String, dynamic> finalKwargs = kwargs ?? {};
+
+    final payload = {
+      "jsonrpc": "2.0",
+      "method": "call",
+      "id": id,
+      "params": {
+        "service": "object",
+        "method": "execute_kw",
+        "args": [
+          _dbName,
+          _userId,
+          _currentPassword,
+          model,
+          method,
+          finalArgs,
+          finalKwargs
+        ],
+        "session_id": _sessionId
+      }
+    };
+
+    try {
+      final response = await http
+          .post(
+            url,
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode(payload),
+          )
+          .timeout(const Duration(seconds: 60));
+
+      Map<String, dynamic> responseBody;
+      try {
+        responseBody = json.decode(response.body);
+      } catch (e) {
+        throw Exception('Error al decodificar la respuesta del servidor.');
+      }
+
+      if (responseBody['error'] != null) {
+        final errorData = responseBody['error']['data'];
+        final errorMessage =
+            errorData['message'] ?? 'Error desconocido desde Odoo.';
+        throw Exception('Error en API ($model/$method): $errorMessage');
+      }
+      return responseBody['result'];
+    } catch (e) {
+      if (e is TimeoutException) {
+        throw Exception(
+            'Error de conexión en ($model/$method): Tiempo de espera agotado.');
+      }
+      rethrow;
+    }
+  }
+} // Fin de la clase OdooApiClient

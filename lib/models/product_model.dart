@@ -32,20 +32,45 @@ class Product {
   factory Product.fromJson(Map<String, dynamic> json, {int? templateId}) {
     String? extractName(dynamic field) {
       if (field is List && field.length > 1) {
-        return field[1] as String?;
+        if (field[1] is String) {
+          return field[1] as String?;
+        }
+      }
+      if (field is String) {
+        return field;
       }
       return null;
     }
 
     int parseUnitsPerPackage(dynamic value) {
-      if (value == null) return 1;
-      if (value is int) return value;
-      if (value is double) return value.toInt();
-      if (value is String) return int.tryParse(value) ?? 1;
+      // ✅ CORRECCIÓN: Añadidas llaves {}
+      if (value == null || value == false) {
+        return 1;
+      }
+      if (value is int) {
+        return value;
+      }
+      if (value is double) {
+        return value.toInt();
+      }
+      if (value is String) {
+        return int.tryParse(value) ?? 1;
+      }
       return 1;
     }
 
     final currentTemplateId = templateId ?? json['id'];
+
+    dynamic brandRawValue = json['x_studio_marca'];
+    String? brandValueResult;
+
+    if (brandRawValue is String) {
+      brandValueResult = brandRawValue.isNotEmpty ? brandRawValue : null;
+    } else if (brandRawValue is bool && brandRawValue == false) {
+      brandValueResult = null;
+    } else {
+      brandValueResult = null;
+    }
 
     return Product(
       id: (json['product_variant_id'] is List)
@@ -58,16 +83,12 @@ class Product {
       stock: (json['qty_available'] ?? 0.0).toDouble(),
       imageUrl:
           "https://pruebas-aplicacion.odoo.com/web/image/product.template/$currentTemplateId/image_1024",
-      salesUnit: (json['x_studio_unidad_de_venta_nombre'] is List)
-          ? json['x_studio_unidad_de_venta_nombre'][1]
-          : 'Unidad',
+      salesUnit:
+          extractName(json['x_studio_unidad_de_venta_nombre']) ?? 'Unidad',
       unitsPerPackage:
           parseUnitsPerPackage(json['x_studio_unidades_por_paquete']),
       categoryName: extractName(json['categ_id']),
-
-      // ✅ CORREGIDO: Usando el nombre de campo correcto
-      brandName: extractName(json['x_studio_marca']),
-
+      brandName: brandValueResult,
       description:
           json['description_sale'] is String ? json['description_sale'] : null,
     );
